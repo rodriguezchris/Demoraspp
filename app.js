@@ -1,6 +1,7 @@
 import {
-  dateWithWords, demoTurn, durationLabel, emptyState, minutesBetween, newId, nowLocal,
-  readTransfer, shiftDate, shortDate, sortedCodes, sortedRecords, storageKey, timestamp, transfer,
+  blankSheetRecord, dateWithWords, delayLegend, demoTurn, durationLabel, emptyState, minutesBetween,
+  maxSheetRows, newId, nowLocal, readTransfer, rowsPerSheet, setSheetTime, sheetRecords, shiftDate,
+  shortDate, sortedCodes, storageKey, timestamp, transfer,
   validCodeNumber, validDate, validTime,
 } from './model.js';
 import { filenameFor, pdfFile, pngFiles, reportPages } from './report.js';
@@ -9,6 +10,10 @@ const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
 const importInput = document.querySelector('#import-file');
 const toast = document.querySelector('#toast');
+const cellEditor = document.querySelector('#cell-editor');
+const paperLogo = new Image();
+paperLogo.src = './intertek.png';
+const logoReady = paperLogo.decode().then(() => paperLogo, () => null);
 let storeUnavailable = false;
 
 function loadState() {
@@ -33,6 +38,12 @@ let toastTimer;
 let currentPages = [];
 let installPrompt;
 let downloadUrls = [];
+let minimumRows = rowsPerSheet;
+let editingCell = null;
+const cellFields = [
+  ['date', 'Fecha'], ['time', 'Desde'], ['endTime', 'Hasta'],
+  ['holds', 'Bodega'], ['code', 'Tipo de demora'],
+];
 
 const navItems = [
   ['turn', 'Turno', 'clipboard'], ['archive', 'Turnos guardados', 'archive'],
@@ -107,6 +118,7 @@ function emptyPanel(glyph, title, message, actions = '') {
 }
 
 function render() {
+  const sheetScroll = document.querySelector('.paper-scroll')?.scrollLeft ?? 0;
   currentPages = [];
   const turn = activeTurn();
   const today = dateWithWords(nowLocal().date);
@@ -124,10 +136,17 @@ function render() {
     </div>
   </div>`;
   renderConnection();
+  const paperScroll = document.querySelector('.paper-scroll');
+  if (paperScroll) paperScroll.scrollLeft = sheetScroll;
   if (view === 'report' && turn) {
-    currentPages = reportPages(turn);
-    document.querySelector('#report-pages').replaceChildren(...currentPages);
+    const preview = document.querySelector('#report-pages');
+    logoReady.then(logo => {
+      if (!preview.isConnected) return;
+      currentPages = reportPages(turn, catalogFor(turn), logo);
+      preview.replaceChildren(...currentPages);
+    });
   }
+  positionCellEditor();
 }
 
 function renderConnection() {
@@ -138,50 +157,73 @@ function renderConnection() {
 }
 
 function renderTurn(turn) {
-  if (!turn) {
-    return heading('Turno de descarga', 'Registra demoras y maniobras por bodega.')
-      + `<section class="overview"><div class="empty-overview">
-        <p class="kicker">Bitácora del turno</p><h2 class="overview-title">Abre un turno</h2>
-        <p>Ingresa los datos del buque una vez y agrega las anotaciones durante la descarga.</p>
-        <div class="actions">${button('Nuevo turno', 'new-turn', 'mint', 'plus')} ${button('Importar registro', 'import', 'outline-light', 'down')}</div></div>
-      </section>
-      <section class="card history"><header class="card-heading"><h2>Movimientos del turno</h2></header>
-      ${emptyPanel('clipboard', 'Sin movimientos', 'Abre un turno para registrar, o carga un ejemplo para probar la bitácora.', button('Cargar turno de ejemplo', 'demo', 'plain'))}</section>
-      ${installPrompt ? `<div class="turn-footer">${button('Instalar app', 'install', 'secondary', 'down')}</div>` : ''}`;
-  }
-
-  const recordAction = turn.closedAt ? '' : button('Registrar movimiento', 'new-record', 'primary', 'plus', '', 'desktop-only');
-  const data = [
-    ['Producto', turn.product], ['Inspector', turn.inspector], ['Cliente', turn.client], ['Bodegas', turn.holdCount], ['Fecha', shortDate(turn.date)],
-  ].map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value || '—')}</dd></div>`).join('');
-  return heading('Turno de descarga', '', recordAction)
-    + `<section class="overview">
-        <div><p class="kicker">${turn.closedAt ? 'Turno finalizado' : 'Turno en curso'}</p><h2 class="overview-title">${esc(turn.ship)}</h2><dl class="overview-dl">${data}</dl></div>
-        <div class="actions">${button('Hoja del turno', 'report', 'mint', 'file')} ${button('Editar datos', 'edit-turn', 'outline-light', 'edit')}</div>
-      </section>
-      <section class="card history"><header class="card-heading"><div><h2>Movimientos del turno</h2></div><span class="badge">${countLabel(turn.records.length)}</span></header>
-        ${turn.records.length ? renderRecords(turn) : emptyPanel('clock', 'Sin movimientos registrados', 'Las anotaciones de este turno aparecerán aquí.')}
-      </section>
-      <div class="turn-footer">
-        ${button('Transferir registro', 'transfer', 'secondary', 'transfer')}
-        ${turn.closedAt ? button('Reabrir turno', 'reopen', 'plain') : button('Finalizar turno', 'finish', 'plain', 'check')}
-        ${installPrompt ? button('Instalar app', 'install', 'secondary', 'down') : ''}
+  const actions = turn
+    ? button('Editar datos', 'edit-turn', 'secondary', 'edit') + button('Vista previa', 'report', 'primary', 'file')
+    : button('Importar registro', 'import', 'secondary', 'down') + button('Nuevo turno', 'new-turn', 'primary', 'plus');
+  const controls = turn
+    ? button('Transferir registro', 'transfer', 'secondary', 'transfer')
+      + (turn.closedAt ? button('Reabrir turno', 'reopen', 'secondary') : button('Finalizar turno', 'finish', 'plain', 'check'))
+    : button('Cargar turno de ejemplo', 'demo', 'plain');
+  const metadata = [
+    ['Barco', turn?.ship], ['Inspector', turn?.inspector],
+    ['Producto', turn?.product], ['Cliente', turn?.client],
+  ].map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('');
+  const detail = turn ? (turn.closedAt ? 'Turno finalizado' : 'Turno en curso') + ' · ' + countLabel(turn.records.length) : '';
+  return `<div class="sheet-workspace">
+    ${heading('Hoja de demoras', detail, actions)}
+    <section class="paper" aria-label="Formato de demoras">
+      <header class="paper-heading">
+        <img src="./intertek.png" alt="Intertek. Total Quality. Assured." width="157" height="46">
+        <dl class="paper-fields">${metadata}</dl>
+      </header>
+      <div class="paper-scroll" tabindex="0" aria-label="Cuadrícula. Desliza hacia la derecha para ver la leyenda.">
+        ${renderSheetGrid(turn)}
       </div>
-      ${turn.closedAt ? '' : button('Registrar movimiento', 'new-record', 'primary', 'plus', '', 'mobile-only mobile-action')}`;
+    </section>
+    <div class="sheet-footer">
+      ${turn ? button('Añadir filas', 'more-rows', 'secondary', 'plus') : ''}
+      ${controls}
+      ${installPrompt ? button('Instalar app', 'install', 'secondary', 'down') : ''}
+    </div>
+  </div>`;
 }
 
-function renderRecords(turn) {
-  const rows = sortedRecords(turn.records).map(record => `<tr>
-    <td class="row-start time"><span class="inline-label">Desde</span>${record.time}${record.date === turn.date ? '' : `<span class="row-date">${shortDate(record.date)}</span>`}</td>
-    <td class="row-end time">${record.endTime ? `<span class="inline-label">Hasta</span>${record.endTime}${record.endDate !== record.date ? `<span class="row-date">${shortDate(record.endDate)}</span>` : ''}` : ''}</td>
-    <td class="row-holds"><span class="inline-label">Bodegas</span><div class="hold-badges">${record.holds.map(hold => `<span class="badge bodega">${hold}</span>`).join('')}</div></td>
-    <td class="row-movement"><span class="badge">${esc(record.code)}</span> <span class="movement-name">${esc(record.name)}</span></td>
-    <td class="row-duration time">${durationLabel(minutesBetween(record))}</td>
-    <td class="row-action">${iconButton('Editar movimiento', 'edit-record', 'edit', record.id)}</td>
-  </tr>`).join('');
-  return `<div class="table-shell record-list"><table aria-label="Movimientos del turno"><thead><tr>
-    <th scope="col">Desde</th><th scope="col">Hasta</th><th scope="col">Bodegas</th><th scope="col">Movimiento</th><th scope="col">Duración</th><th scope="col"><span class="inline-label">Editar</span></th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
+function renderSheetGrid(turn) {
+  const records = sheetRecords(turn?.records ?? []);
+  const legend = delayLegend(catalogFor(turn), records.values());
+  const requiredRows = Math.max(rowsPerSheet, legend.length, ...[...records.keys()].map(slot => slot + 1));
+  const rowCount = Math.min(maxSheetRows, Math.max(minimumRows, Math.ceil(requiredRows / rowsPerSheet) * rowsPerSheet));
+  const rows = Array.from({ length: rowCount }, (_, slot) => {
+    const record = records.get(slot);
+    const hint = legend[slot];
+    const cells = cellFields.map(([key, label]) => {
+      let value = record?.[key] ?? '';
+      let detail = '';
+      if (key === 'date' && value) value = shortDate(value);
+      if (key === 'holds' && record) value = record.holds.join(', ');
+      if (key === 'endTime' && record?.endTime) {
+        detail = durationLabel(minutesBetween(record));
+        if (record.endDate !== record.date) detail = shortDate(record.endDate) + (detail ? ' · ' + detail : '');
+      }
+      if (key === 'code' && record) detail = record.name;
+      const name = label + ', fila ' + (slot + 1) + (value ? ': ' + value : '') + (detail ? ' · ' + detail : '');
+      const editable = !turn?.closedAt || record;
+      return `<td>${editable
+        ? `<button type="button" class="sheet-cell" data-action="edit-cell" data-slot="${slot}" data-field="${key}"
+            aria-label="${esc(name)}" aria-expanded="false"${detail ? ` title="${esc(detail)}"` : ''}>${esc(value)}</button>`
+        : ''}</td>`;
+    }).join('');
+    return `<tr>${cells}<td class="legend-number">${esc(hint?.number)}</td><td class="legend-name">${esc(hint?.name)}</td></tr>`;
+  }).join('');
+  return `<table class="sheet-grid" aria-label="Hoja del turno">
+    <colgroup>${cellFields.map(([key]) => `<col class="column-${key}">`).join('')}</colgroup>
+    <colgroup><col class="column-legend-number"><col class="column-legend-name"></colgroup>
+    <thead><tr>
+      ${cellFields.map(([key, label]) => `<th scope="col" class="column-${key}">${label}</th>`).join('')}
+      <th scope="colgroup" colspan="2">Descripción de la demora</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function renderArchive() {
@@ -250,7 +292,7 @@ function field(label, name, value = '', options = {}) {
     ${options.note ? `<span class="field-note">${options.note}</span>` : ''}</label>`;
 }
 
-function showTurnForm(turn = null) {
+function showTurnForm(turn = null, nextCell = null) {
   const fields = [
     field('Nombre del buque', 'ship', turn?.ship, { full: true, attributes: 'required maxlength="100" autofocus' }),
     field('Producto', 'product', turn?.product, { attributes: 'maxlength="100"' }),
@@ -284,94 +326,223 @@ function showTurnForm(turn = null) {
       });
     }
     view = 'turn';
+    if (!turn) minimumRows = rowsPerSheet;
     notify(turn ? 'Datos del turno actualizados.' : 'Turno creado.');
+    if (nextCell) {
+      queueMicrotask(() => {
+        try {
+          openCell(activeTurn(), nextCell.slot, nextCell.key);
+        } catch (error) {
+          notify(error.message);
+        }
+      });
+    }
   });
 }
 
-function showRecordForm(turn, record = null) {
-  const catalog = sortedCodes(catalogFor(turn));
-  const now = nowLocal();
-  if (!record && !catalog.length) {
-    openDialog('Agrega un código', `<p>El catálogo está vacío. Agrega un código antes de registrar un movimiento.</p>
-      <div class="modal-actions">${button('Abrir códigos', 'navigate', 'primary', 'tag', 'catalog')}</div>`);
+function cellAnchor(slot, key) {
+  return document.querySelector('.sheet-cell[data-slot="' + slot + '"][data-field="' + key + '"]');
+}
+
+function closeCell(restoreFocus = false) {
+  if (!editingCell) return;
+  const anchor = cellAnchor(editingCell.slot, editingCell.key);
+  anchor?.setAttribute('aria-expanded', 'false');
+  cellEditor.hidden = true;
+  cellEditor.replaceChildren();
+  editingCell = null;
+  if (restoreFocus) anchor?.focus({ preventScroll: true });
+}
+
+function positionCellEditor() {
+  if (!editingCell || cellEditor.hidden) return;
+  const anchor = cellAnchor(editingCell.slot, editingCell.key);
+  if (!anchor) {
+    closeCell();
     return;
   }
+  anchor.setAttribute('aria-expanded', 'true');
+  const bounds = anchor.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const screenHeight = viewport?.height ?? window.innerHeight;
+  const topBound = viewport?.offsetTop ?? 0;
+  const screenBottom = topBound + screenHeight;
+  const panelHeight = cellEditor.offsetHeight;
+  const below = bounds.bottom + 5;
+  const top = below + panelHeight <= screenBottom - 8
+    ? below : Math.max(topBound + 8, Math.min(bounds.top - panelHeight - 5, screenBottom - panelHeight - 8));
+  const left = Math.max(8, Math.min(bounds.left, document.documentElement.clientWidth - cellEditor.offsetWidth - 8));
+  cellEditor.style.top = top + 'px';
+  cellEditor.style.left = left + 'px';
+}
 
-  const holds = Array.from({ length: turn.holdCount }, (_, index) => {
-    const number = index + 1;
-    return `<label class="hold-choice"><input type="checkbox" name="hold" value="${number}" aria-label="Bodega ${number}" ${record?.holds.includes(number) ? 'checked' : ''}><span>${number}</span></label>`;
-  }).join('');
-  const catalogOptions = catalog.filter(code => !record || code.id !== record.codeId
-    || code.number !== record.code || code.name !== record.name);
-  const options = catalogOptions.map(code => `<option value="code:${esc(code.id)}">${esc(code.number + ' · ' + code.name)}</option>`).join('');
-  const startingOption = record
-    ? `<option value="saved" selected>${esc(record.code + ' · ' + record.name)} (guardado)</option>`
-    : '<option value="" disabled selected>Selecciona un movimiento</option>';
-  const date = record?.date ?? now.date;
-  const fields = [
-    `<fieldset class="full"><legend>Bodegas</legend><div class="hold-picker">${holds}</div></fieldset>`,
-    `<label class="field full">Movimiento<select name="movement" required>${startingOption}${options}</select></label>`,
-    field('Fecha de inicio', 'date', date, { type: 'date', attributes: 'required' }),
-    field('Desde', 'time', record?.time ?? now.time, { type: 'time', attributes: 'required' }),
-    field('Hasta (opcional)', 'endTime', record?.endTime, { type: 'time' }),
-    field('Fecha de fin', 'endDate', record?.endDate || date, { type: 'date', attributes: record?.endTime ? '' : 'disabled' }),
-    '<p class="field-note full" id="end-note">Puedes dejar «Hasta» en blanco.</p>',
-  ].join('');
-
-  const form = showForm(record ? 'Editar movimiento' : 'Registrar movimiento', fields, data => {
-    const selected = data.get('movement');
-    const date = data.get('date');
-    const time = data.get('time');
-    const endTime = data.get('endTime');
-    const endDate = endTime ? data.get('endDate') : '';
-    const holds = data.getAll('hold').map(Number);
-    if (!holds.length) throw new Error('Selecciona al menos una bodega.');
-    if (!validDate(date) || !validTime(time) || endTime && (!validDate(endDate) || !validTime(endTime))) {
-      throw new Error('Revisa las fechas y horas del movimiento.');
-    }
-    if (minutesBetween({ date, time, endDate, endTime }) < 0) throw new Error('La fecha y hora de fin deben ser iguales o posteriores al inicio.');
-    updateTurn(turn.id, (current, next) => {
-      if (!record && current.closedAt) throw new Error('Reabre el turno antes de agregar movimientos.');
-      if (holds.some(hold => hold > current.holdCount)) throw new Error('Una bodega seleccionada ya no está disponible.');
-      const previous = current.records.find(item => item.id === record?.id);
-      if (record && !previous) throw new Error('La anotación ya no está disponible.');
-      const code = (current.catalog ?? next.catalog).find(item => 'code:' + item.id === selected);
-      const snapshot = selected === 'saved' && previous
-        ? { codeId: previous.codeId, code: previous.code, name: previous.name }
-        : code && { codeId: code.id, code: code.number, name: code.name };
-      if (!snapshot) throw new Error('Selecciona un código disponible.');
-      const row = { id: previous?.id ?? newId(), date, time, endDate, endTime, holds, ...snapshot };
-      if (previous) Object.assign(previous, row);
-      else current.records.push(row);
-    });
-    notify(record ? 'Movimiento actualizado.' : 'Movimiento registrado.');
-  }, record ? button('Eliminar', 'delete-record', 'plain', 'trash', record.id, 'push') : '');
-
-  const { date: startDay, time: startTime, endDate, endTime } = form.elements;
-  let manualEndDate = Boolean(record?.endTime);
-  const endNote = form.querySelector('#end-note');
-  function updateEnd() {
-    endDate.disabled = !endTime.value;
-    endDate.required = Boolean(endTime.value);
-    if (!manualEndDate && validDate(startDay.value)) {
-      const overnight = endTime.value && startTime.value && endTime.value < startTime.value;
-      if (overnight) {
-        const nextDate = shiftDate(startDay.value, 1);
-        endDate.value = validDate(nextDate) ? nextDate : '';
-      } else {
-        endDate.value = startDay.value;
+function openCell(turn, slot, key) {
+  const field = cellFields.find(([name]) => name === key);
+  if (!field || !Number.isInteger(slot) || slot < 0 || slot >= maxSheetRows) return;
+  if (!turn) {
+    showTurnForm(null, { slot, key });
+    return;
+  }
+  if (editingCell?.slot === slot && editingCell.key === key) {
+    closeCell(true);
+    return;
+  }
+  closeCell();
+  const existing = sheetRecords(turn.records).get(slot);
+  if (!existing || key === 'time' && !existing.time) {
+    updateTurn(turn.id, current => {
+      const rows = sheetRecords(current.records);
+      let row = rows.get(slot);
+      const now = nowLocal();
+      if (!row) {
+        if (current.closedAt) throw new Error('Reabre el turno antes de agregar movimientos.');
+        const rowDate = now.date === shiftDate(current.date, 1) ? now.date : current.date;
+        row = blankSheetRecord(slot, rowDate);
+        rows.set(slot, row);
       }
-      endNote.textContent = overnight
-        ? 'Se sugirió el día siguiente. Puedes cambiar la fecha de fin.'
-        : 'Puedes dejar «Hasta» en blanco.';
+      if (key === 'time' && !row.time && !(minutesBetween({ ...row, time: now.time }) < 0)) row.time = now.time;
+      current.records = [...rows.values()];
+    });
+    turn = activeTurn();
+    render();
+  }
+  const row = sheetRecords(turn.records).get(slot);
+  editingCell = { turnId: turn.id, rowId: row.id, slot, key };
+  cellEditor.innerHTML = `<header class="cell-editor-head"><h2>${field[1]} <span>Fila ${slot + 1}</span></h2>
+    <button type="button" class="icon-button" data-cell-command="close" aria-label="Cerrar casilla">${icon('close', 17)}</button></header>
+    ${cellEditorFields(turn, row, key)}
+    <p class="error cell-error" role="alert"></p>
+    <footer class="cell-editor-footer">${button('Limpiar fila', 'delete-record', 'plain', 'trash', row.id)}</footer>`;
+  cellEditor.hidden = false;
+  positionCellEditor();
+  const target = cellEditor.querySelector('input, button[data-cell-value]') ?? cellEditor.querySelector('button');
+  if (matchMedia('(pointer: fine)').matches) target.focus({ preventScroll: true });
+}
+
+function cellEditorFields(turn, row, key) {
+  if (key === 'holds') {
+    const options = Array.from({ length: turn.holdCount }, (_, index) => {
+      const hold = index + 1;
+      return `<button type="button" class="hold-toggle" aria-label="Bodega ${hold}" aria-pressed="${row.holds.includes(hold)}"
+        data-cell-value="${hold}">${hold}</button>`;
+    }).join('');
+    return `<div class="cell-holds">${options}</div>`;
+  }
+  if (key === 'code') {
+    const catalog = sortedCodes(catalogFor(turn));
+    return `<div class="cell-codes">
+      <input type="search" aria-label="Buscar tipo de demora" placeholder="Buscar código o descripción" id="cell-code-search">
+      <div class="cell-code-list">${catalog.map(code => `<button type="button" class="cell-code"
+        data-cell-value="${esc(code.id)}" data-search-code="${esc((code.number + ' ' + code.name).toLowerCase())}">
+        <strong>${esc(code.number)}</strong><span>${esc(code.name)}</span></button>`).join('')}
+        <p id="cell-no-codes" class="muted-note"${catalog.length ? ' hidden' : ''}>No hay códigos disponibles.</p>
+      </div>
+      ${row.code ? '<button type="button" class="btn plain" data-cell-command="clear">Borrar código</button>' : ''}
+    </div>`;
+  }
+  const label = cellFields.find(([name]) => name === key)[1];
+  const inputType = key === 'date' ? 'date' : 'time';
+  const finishDate = key === 'endTime'
+    ? `<label class="field">Fecha de fin<input type="date" name="endDate" value="${row.endDate || row.date}"></label>` : '';
+  const clear = key === 'date' ? '' : '<button type="button" class="btn plain" data-cell-command="clear">Borrar</button>';
+  return `<form class="cell-form">
+    <label class="field">${label}<input type="${inputType}" name="value" value="${row[key]}" required></label>
+    ${finishDate}
+    <div class="actions">${clear}<button type="submit" class="btn primary">Guardar</button></div>
+  </form>`;
+}
+
+function saveCell(update, keepOpen = false) {
+  const { turnId, rowId, slot, key } = editingCell;
+  try {
+    updateTurn(turnId, (turn, next) => {
+      const rows = sheetRecords(turn.records);
+      const row = [...rows.values()].find(item => item.id === rowId);
+      if (!row) throw new Error('La fila ya no está disponible.');
+      update(row, turn, next);
+      turn.records = [...rows.values()];
+    });
+    if (!keepOpen) closeCell();
+    render();
+    if (!keepOpen) cellAnchor(slot, key)?.focus({ preventScroll: true });
+    else cellEditor.querySelector('.cell-error').textContent = '';
+  } catch (error) {
+    cellEditor.querySelector('.cell-error').textContent = error.message;
+    positionCellEditor();
+    return false;
+  }
+  return true;
+}
+
+cellEditor.addEventListener('click', event => {
+  const control = event.target.closest('button');
+  if (!control || !editingCell) return;
+  const { key } = editingCell;
+  const { cellValue, cellCommand } = control.dataset;
+  if (cellCommand === 'close') {
+    closeCell(true);
+  } else if (cellCommand === 'clear') {
+    saveCell(row => {
+      if (key === 'code') Object.assign(row, { codeId: '', code: '', name: '' });
+      else setSheetTime(row, key, '', '');
+    });
+  } else if (cellValue && key === 'holds') {
+    const hold = Number(cellValue);
+    let selected;
+    if (saveCell((row, turn) => {
+      if (hold > turn.holdCount) throw new Error('Esa bodega ya no está disponible.');
+      selected = !row.holds.includes(hold);
+      row.holds = selected ? [...row.holds, hold].sort((a, b) => a - b) : row.holds.filter(item => item !== hold);
+    }, true)) control.setAttribute('aria-pressed', String(selected));
+  } else if (cellValue && key === 'code') {
+    saveCell((row, turn, next) => {
+      const code = (turn.catalog ?? next.catalog).find(item => item.id === cellValue);
+      if (!code) throw new Error('Ese código ya no está disponible.');
+      Object.assign(row, { codeId: code.id, code: code.number, name: code.name });
+    });
+  }
+});
+
+cellEditor.addEventListener('input', event => {
+  const input = event.target;
+  if (input.id === 'cell-code-search') {
+    const query = input.value.trim().toLowerCase();
+    const options = [...cellEditor.querySelectorAll('[data-search-code]')];
+    for (const option of options) option.hidden = !option.dataset.searchCode.includes(query);
+    cellEditor.querySelector('#cell-no-codes').hidden = options.some(option => !option.hidden);
+  } else if (editingCell?.key === 'endTime') {
+    const form = input.form;
+    if (input.name === 'endDate') form.dataset.manualEndDate = 'true';
+    if (input.name === 'value' && !form.dataset.manualEndDate) {
+      const row = sheetRecords(activeTurn().records).get(editingCell.slot);
+      if (row.endDate && row.endDate !== row.date && row.endDate !== shiftDate(row.date, 1)) return;
+      const nextDate = row.time && input.value && input.value < row.time ? shiftDate(row.date, 1) : row.date;
+      form.elements.endDate.value = validDate(nextDate) ? nextDate : row.date;
     }
   }
-  endDate.addEventListener('input', () => {
-    manualEndDate = true;
-    endNote.textContent = 'Puedes dejar «Hasta» en blanco.';
+  positionCellEditor();
+});
+
+cellEditor.addEventListener('submit', event => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const { key } = editingCell;
+  const value = data.get('value');
+  saveCell(row => {
+    if (key !== 'date') {
+      setSheetTime(row, key, value, data.get('endDate'));
+      return;
+    }
+    if (!validDate(value)) throw new Error('Revisa la fecha ingresada.');
+    if (row.endDate) {
+      const days = (Date.parse(row.endDate) - Date.parse(row.date)) / 86400000;
+      const endDate = shiftDate(value, days);
+      if (!validDate(endDate)) throw new Error('Revisa la fecha ingresada.');
+      row.endDate = endDate;
+    }
+    row.date = value;
   });
-  for (const input of [startDay, startTime, endTime]) input.addEventListener('input', updateEnd);
-}
+});
 
 function updateCatalog(scope, turnId, update) {
   if (scope === 'turn' && activeTurn()?.catalog) {
@@ -440,8 +611,9 @@ function openFiles(title, description, files) {
   });
 }
 
-function exportReport(turn, format) {
-  const pages = currentPages.length ? currentPages : reportPages(turn);
+async function exportReport(turn, format) {
+  const logo = await logoReady;
+  const pages = currentPages.length ? currentPages : reportPages(turn, catalogFor(turn), logo);
   const filename = filenameFor(turn);
   const files = format === 'png' ? pngFiles(pages, filename) : [pdfFile(pages, filename)];
   const description = format === 'png'
@@ -472,6 +644,7 @@ function saveImport(incoming, choice = 'new') {
     next.activeId = incoming.id;
   });
   catalogScope = 'turn';
+  minimumRows = rowsPerSheet;
   view = 'turn';
   notify('Registro importado.');
 }
@@ -519,10 +692,12 @@ async function importRecord(file) {
 }
 
 document.addEventListener('click', async event => {
-  const button = event.target.closest('button[data-action]');
+  const button = event.target.closest('button[data-action]')
+    ?? event.target.closest('.sheet-grid td')?.querySelector('.sheet-cell');
   if (!button) return;
   const { action, id } = button.dataset;
   const turn = activeTurn();
+  if (action !== 'edit-cell' && !cellEditor.contains(button)) closeCell();
   try {
     switch (action) {
       case 'navigate':
@@ -539,21 +714,24 @@ document.addEventListener('click', async event => {
       case 'edit-turn':
         showTurnForm(turn);
         break;
-      case 'new-record':
-        showRecordForm(turn);
+      case 'edit-cell':
+        openCell(turn, Number(button.dataset.slot), button.dataset.field);
         break;
-      case 'edit-record': {
-        const record = turn.records.find(item => item.id === id);
-        if (record) showRecordForm(turn, record);
+      case 'more-rows':
+        minimumRows = Math.min(maxSheetRows, document.querySelector('.sheet-grid tbody').rows.length + rowsPerSheet);
+        render();
         break;
-      }
       case 'delete-record':
-        confirmAction('Eliminar movimiento', 'Se quitará esta anotación de la hoja del turno.', 'Eliminar movimiento', () => {
-          updateTurn(turn.id, current => { current.records = current.records.filter(item => item.id !== id); });
-          notify('Movimiento eliminado.');
+        closeCell();
+        confirmAction('Eliminar movimiento', 'Se limpiará esta fila de la hoja del turno.', 'Limpiar fila', () => {
+          updateTurn(turn.id, current => {
+            current.records = [...sheetRecords(current.records).values()].filter(item => item.id !== id);
+          });
+          notify('Fila limpiada.');
         });
         break;
       case 'demo': {
+        minimumRows = rowsPerSheet;
         const sample = demoTurn();
         updateState(next => { next.turns.push(sample); next.activeId = sample.id; });
         render();
@@ -566,6 +744,7 @@ document.addEventListener('click', async event => {
           next.activeId = id;
         });
         catalogScope = 'turn';
+        minimumRows = rowsPerSheet;
         view = 'turn';
         render();
         break;
@@ -614,7 +793,7 @@ document.addEventListener('click', async event => {
       }
       case 'png':
       case 'pdf':
-        exportReport(turn, action);
+        await exportReport(turn, action);
         break;
       case 'transfer':
         exportTransfer(turn);
@@ -683,6 +862,16 @@ window.addEventListener('storage', event => {
     render();
   }
 });
+
+document.addEventListener('pointerdown', event => {
+  if (editingCell && !cellEditor.contains(event.target) && !event.target.closest('.sheet-cell')) closeCell();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && editingCell) closeCell(true);
+});
+window.addEventListener('resize', positionCellEditor);
+window.visualViewport?.addEventListener('resize', positionCellEditor);
+window.addEventListener('scroll', positionCellEditor, true);
 
 render();
 if (storeUnavailable) notify('Los registros guardados no están disponibles en este navegador.');

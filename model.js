@@ -1,5 +1,7 @@
 export const storageKey = 'bitacora-de-muelle:v1';
 export const transferFormat = 'bitacora-de-muelle/turno';
+export const rowsPerSheet = 26;
+export const maxSheetRows = 2600;
 export const newId = () => crypto.randomUUID();
 export const timestamp = () => new Date().toISOString();
 
@@ -50,7 +52,7 @@ export const dateWithWords = date => new Intl.DateTimeFormat('es-HN', {
 }).format(new Date(date + 'T00:00:00Z'));
 
 export function minutesBetween(record) {
-  if (!record.endTime) return null;
+  if (!record.time || !record.endTime) return null;
   const date = new Date(record.date + 'T' + record.time + ':00Z');
   const end = new Date(record.endDate + 'T' + record.endTime + ':00Z');
   return (end - date) / 60000;
@@ -63,10 +65,46 @@ export function durationLabel(minutes) {
   return minutes % 60 ? hours + ' ' + minutes % 60 + ' min' : hours;
 }
 
-export const sortedRecords = records => [...records].sort((a, b) =>
-  (a.date + a.time).localeCompare(b.date + b.time));
 export const sortedCodes = catalog => [...catalog].sort((a, b) =>
   a.number.localeCompare(b.number, 'es', { numeric: true }));
+
+export function sheetRecords(records) {
+  const rows = new Map(records.filter(record => record.slot !== undefined).map(record => [record.slot, record]));
+  const legacy = records.filter(record => record.slot === undefined)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let slot = 0;
+  for (const record of legacy) {
+    while (rows.has(slot)) slot++;
+    rows.set(slot, { ...record, slot });
+  }
+  return rows;
+}
+
+export function delayLegend(catalog, records) {
+  const entries = new Map(catalog.map(item => [JSON.stringify([item.number, item.name]), item]));
+  for (const record of records) {
+    if (!record.code) continue;
+    const key = JSON.stringify([record.code, record.name]);
+    if (!entries.has(key)) entries.set(key, { number: record.code, name: record.name });
+  }
+  return sortedCodes(entries.values());
+}
+
+export function blankSheetRecord(slot, date) {
+  return { id: newId(), slot, date, time: '', endDate: '', endTime: '', holds: [], codeId: '', code: '', name: '' };
+}
+
+export function setSheetTime(record, field, time, endDate) {
+  if (time && !validTime(time)) throw new Error('Revisa la hora que ingresaste.');
+  if (field === 'time') {
+    record.time = time;
+  } else {
+    if (time && !validDate(endDate)) throw new Error('Revisa la fecha de fin.');
+    record.endTime = time;
+    record.endDate = time ? endDate : '';
+  }
+  if (minutesBetween(record) < 0) throw new Error('La hora de fin debe ser igual o posterior al inicio.');
+}
 
 export function transfer(turn, catalog) {
   return { format: transferFormat, version: 1, exportedAt: timestamp(), turn: { ...turn, catalog } };
@@ -95,7 +133,7 @@ export function readTransfer(fileText) {
     || !validString(turn.inspector, 100, true) || !validDate(turn.date)
     || !validStamp(turn.updatedAt) || ![null, undefined].includes(turn.closedAt) && !validStamp(turn.closedAt)
     || !Number.isInteger(turn.holdCount) || turn.holdCount < 1 || turn.holdCount > 30
-    || !Array.isArray(turn.records) || !Array.isArray(turn.catalog)) {
+    || !Array.isArray(turn.records) || turn.records.length > maxSheetRows || !Array.isArray(turn.catalog)) {
     throw new Error('Faltan datos del turno o hay valores inválidos.');
   }
 
@@ -112,11 +150,16 @@ export function readTransfer(fileText) {
   });
 
   const recordIds = new Set();
+  const slots = new Set();
   const records = turn.records.map(record => {
+    const hasSlot = record?.slot !== undefined;
+    const hasCode = record && validString(record.codeId, 100) && validCodeNumber(record.code) && validString(record.name, 120);
+    const blankCode = hasSlot && record.codeId === '' && record.code === '' && record.name === '';
     if (!record || !validString(record.id, 100) || recordIds.has(record.id)
-      || !validString(record.codeId, 100) || !validCodeNumber(record.code)
-      || !validString(record.name, 120) || !validDate(record.date) || !validTime(record.time)
-      || !Array.isArray(record.holds) || !record.holds.length
+      || (hasSlot && (!Number.isInteger(record.slot) || record.slot < 0 || record.slot >= maxSheetRows || slots.has(record.slot)))
+      || !(hasCode || blankCode) || !validDate(record.date)
+      || !(validTime(record.time) || (hasSlot && record.time === ''))
+      || !Array.isArray(record.holds) || (!hasSlot && !record.holds.length)
       || record.holds.some(hold => !Number.isInteger(hold) || hold < 1 || hold > turn.holdCount)
       || new Set(record.holds).size !== record.holds.length
       || (record.endTime === '' ? record.endDate !== '' : !validDate(record.endDate) || !validTime(record.endTime))
@@ -124,8 +167,10 @@ export function readTransfer(fileText) {
       throw new Error('El archivo contiene movimientos con datos u horas inválidas.');
     }
     recordIds.add(record.id);
-    const { id, date, time, endDate, endTime, codeId, code, name } = record;
-    return { id, date, time, endDate, endTime, codeId, code, name, holds: [...record.holds].sort((a, b) => a - b) };
+    const { id, slot, date, time, endDate, endTime, codeId, code, name } = record;
+    if (hasSlot) slots.add(slot);
+    return { id, ...(hasSlot ? { slot } : {}), date, time, endDate, endTime, codeId, code, name,
+      holds: [...record.holds].sort((a, b) => a - b) };
   });
 
   const { id, ship, product, client, inspector, date, updatedAt, holdCount } = turn;
