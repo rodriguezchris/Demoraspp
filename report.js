@@ -145,8 +145,7 @@ function drawRow(context, { cells, rowHeight }, y) {
   context.textAlign = 'left';
 }
 
-export function reportPages(turn, catalog, logo) {
-  const pages = [];
+export function reportPages(turn, catalog, logo, { showPageNumber = true } = {}) {  const pages = [];
   const records = sheetRecords(turn.records);
   const legend = delayLegend(catalog, records.values());
   const ambiguousCodes = new Set(legend.filter((entry, index) => legend[index - 1]?.number === entry.number).map(entry => entry.number));
@@ -170,10 +169,12 @@ export function reportPages(turn, catalog, logo) {
     pages.push(page);
   }
   return pages.map(({ canvas, context }, index) => {
-    font(context, 11, 500);
-    context.fillStyle = '#171717';
-    context.textAlign = 'right';
-    context.fillText('Hoja ' + (index + 1) + ' de ' + pages.length, width - margin, 1073);
+        if (showPageNumber) {
+      font(context, 11, 500);
+      context.fillStyle = '#171717';
+      context.textAlign = 'right';
+      context.fillText('Hoja ' + (index + 1) + ' de ' + pages.length, width - margin, 1073);
+    }
     canvas.setAttribute('role', 'img');
     canvas.setAttribute('aria-label', 'Vista previa de la hoja ' + (index + 1) + ' de ' + pages.length);
     return canvas;
