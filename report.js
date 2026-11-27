@@ -49,8 +49,10 @@ function createPage() {
 }
 
 function pageHeading(context, turn, logo) {
-  if (logo) context.drawImage(logo, margin, 59, 179, 52);
-  else {
+  if (logo) {
+    const scale = Math.min(179 / logo.naturalWidth, 68 / logo.naturalHeight);
+    context.drawImage(logo, margin, 59, logo.naturalWidth * scale, logo.naturalHeight * scale);
+  } else {
     font(context, 33, 700);
     context.fillStyle = '#171717';
     context.fillText('intertek', margin, 59);
@@ -62,25 +64,28 @@ function pageHeading(context, turn, logo) {
     ['BARCO', turn.ship], ['INSPECTOR', turn.inspector],
     ['PRODUCTO', turn.product], ['CLIENTE', turn.client],
   ];
+  const columnGap = 30;
+  const columnWidth = (width - 2 * margin - columnGap) / 2;
+  const labelWidth = 84;
+  const valueWidth = columnWidth - labelWidth;
+  const lineHeight = 17;
   let y = 141;
   for (let index = 0; index < fields.length; index += 2) {
-    let rowHeight = 23;
-    const pair = fields.slice(index, index + 2).map(([label, value], column) => {
-      const x = margin + column * 364;
-      font(context, 13, 600);
-      const parts = lines(context, value, 247);
-      rowHeight = Math.max(rowHeight, parts.length * 17 + 5);
-      return { x, label, parts };
-    });
-    for (const { x, label, parts } of pair) {
-      font(context, 12, 700);
+    font(context, 13, 600);
+    const pair = fields.slice(index, index + 2).map(([label, value]) => ({
+      label, parts: lines(context, value, valueWidth - 4),
+    }));
+    const rowHeight = Math.max(...pair.map(({ parts }) => parts.length)) * lineHeight + 5;
+    pair.forEach(({ label, parts }, column) => {
+      const x = margin + column * (columnWidth + columnGap);
+      const valueX = x + labelWidth;
       context.fillStyle = '#171717';
-      context.fillText(label + ':', x, y + rowHeight - 17);
+      font(context, 13, 700);
+      context.fillText(label + ':', x, y);
       font(context, 13, 600);
-      parts.forEach((part, line) => context.fillText(part, x + 79, y + line * 17));
-      context.strokeStyle = '#161616';
-      context.fillRect(x + 77, y + rowHeight, 258, 1);
-    }
+      parts.forEach((part, line) => context.fillText(part, valueX + 2, y + line * lineHeight));
+      context.fillRect(valueX, y + rowHeight, valueWidth, 1);
+    });
     y += rowHeight + 11;
   }
   y += 11;

@@ -46,6 +46,13 @@ export function validDate(value) {
 }
 
 export const validTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+export function parseSheetTime(value) {
+  const parts = /^(\d{1,2}):?(\d{2})$/.exec(value.trim());
+  if (!parts) return null;
+  const time = parts[1].padStart(2, '0') + ':' + parts[2];
+  return validTime(time) ? time : null;
+}
+
 export const shortDate = date => date.split('-').reverse().join('/');
 export const dateWithWords = date => new Intl.DateTimeFormat('es-HN', {
   day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',

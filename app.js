@@ -1,6 +1,6 @@
 import {
   blankSheetRecord, dateWithWords, delayLegend, demoTurn, durationLabel, emptyState, minutesBetween,
-  maxSheetRows, newId, nowLocal, readTransfer, rowsPerSheet, setSheetTime, sheetRecords, shiftDate,
+  maxSheetRows, newId, nowLocal, parseSheetTime, readTransfer, rowsPerSheet, setSheetTime, sheetRecords, shiftDate,
   shortDate, sortedCodes, storageKey, timestamp, transfer,
   validCodeNumber, validDate, validTime,
 } from './model.js';
@@ -11,9 +11,8 @@ const dialog = document.querySelector('#dialog');
 const importInput = document.querySelector('#import-file');
 const toast = document.querySelector('#toast');
 const cellEditor = document.querySelector('#cell-editor');
-const paperLogo = new Image();
-paperLogo.src = './intertek.png';
-const logoReady = paperLogo.decode().then(() => paperLogo, () => null);
+const paperLogoFiles = { original: './intertek.png', nuevo: './intertek-nuevo.webp' };
+const paperLogoImages = new Map();
 let storeUnavailable = false;
 
 function loadState() {
@@ -117,6 +116,26 @@ function emptyPanel(glyph, title, message, actions = '') {
     <p>${message}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
 }
 
+function selectedPaperLogo() {
+  return state.paperLogo === 'nuevo' ? 'nuevo' : 'original';
+}
+
+function loadPaperLogo(selection) {
+  if (!paperLogoImages.has(selection)) {
+    const image = new Image();
+    image.src = paperLogoFiles[selection];
+    paperLogoImages.set(selection, image.decode().then(() => image, () => null));
+  }
+  return paperLogoImages.get(selection);
+}
+
+function renderLogoPicker() {
+  return `<label class="logo-picker">Logo <select id="paper-logo-select">
+    <option value="original" ${selectedPaperLogo() === 'original' ? 'selected' : ''}>Original</option>
+    <option value="nuevo" ${selectedPaperLogo() === 'nuevo' ? 'selected' : ''}>Nuevo</option>
+  </select></label>`;
+}
+
 function render() {
   const sheetScroll = document.querySelector('.paper-scroll')?.scrollLeft ?? 0;
   currentPages = [];
@@ -140,7 +159,7 @@ function render() {
   if (paperScroll) paperScroll.scrollLeft = sheetScroll;
   if (view === 'report' && turn) {
     const preview = document.querySelector('#report-pages');
-    logoReady.then(logo => {
+    loadPaperLogo(selectedPaperLogo()).then(logo => {
       if (!preview.isConnected) return;
       currentPages = reportPages(turn, catalogFor(turn), logo);
       preview.replaceChildren(...currentPages);
@@ -157,9 +176,9 @@ function renderConnection() {
 }
 
 function renderTurn(turn) {
-  const actions = turn
+  const actions = renderLogoPicker() + (turn
     ? button('Editar datos', 'edit-turn', 'secondary', 'edit') + button('Vista previa', 'report', 'primary', 'file')
-    : button('Importar registro', 'import', 'secondary', 'down') + button('Nuevo turno', 'new-turn', 'primary', 'plus');
+    : button('Importar registro', 'import', 'secondary', 'down') + button('Nuevo turno', 'new-turn', 'primary', 'plus'));
   const controls = turn
     ? button('Transferir registro', 'transfer', 'secondary', 'transfer')
       + (turn.closedAt ? button('Reabrir turno', 'reopen', 'secondary') : button('Finalizar turno', 'finish', 'plain', 'check'))
@@ -173,7 +192,7 @@ function renderTurn(turn) {
     ${heading('Hoja de demoras', detail, actions)}
     <section class="paper" aria-label="Formato de demoras">
       <header class="paper-heading">
-        <img src="./intertek.png" alt="Intertek. Total Quality. Assured." width="157" height="46">
+        <img src="${paperLogoFiles[selectedPaperLogo()]}" alt="Intertek. Total Quality. Assured." width="157" height="60">
         <dl class="paper-fields">${metadata}</dl>
       </header>
       <div class="paper-scroll" tabindex="0" aria-label="Cuadrícula. Desliza hacia la derecha para ver la leyenda.">
@@ -256,7 +275,7 @@ function renderReport(turn) {
     + `<section class="card">${emptyPanel('file', 'Abre un turno', 'La vista previa y los formatos de descarga estarán disponibles al abrir un turno.',
       button('Ir al turno', 'navigate', 'primary', 'clipboard', 'turn'))}</section>`;
   return heading('Hoja del turno', esc(turn.ship + ' · ' + shortDate(turn.date)),
-    button('Imagen PNG', 'png', 'secondary', 'picture') + button('PDF', 'pdf', 'primary', 'file'))
+    renderLogoPicker() + button('Imagen PNG', 'png', 'secondary', 'picture') + button('PDF', 'pdf', 'primary', 'file'))
     + '<div class="report-area" id="report-pages" aria-label="Vista previa de la hoja"></div>';
 }
 
@@ -416,7 +435,10 @@ function openCell(turn, slot, key) {
   cellEditor.hidden = false;
   positionCellEditor();
   const target = cellEditor.querySelector('input, button[data-cell-value]') ?? cellEditor.querySelector('button');
-  if (matchMedia('(pointer: fine)').matches) target.focus({ preventScroll: true });
+  if (matchMedia('(pointer: fine)').matches) {
+    target.focus({ preventScroll: true });
+    if (target.matches('[data-sheet-time]')) target.select();
+  }
 }
 
 function cellEditorFields(turn, row, key) {
@@ -441,12 +463,14 @@ function cellEditorFields(turn, row, key) {
     </div>`;
   }
   const label = cellFields.find(([name]) => name === key)[1];
-  const inputType = key === 'date' ? 'date' : 'time';
+  const inputAttributes = key === 'date' ? 'type="date"'
+    : 'type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" aria-describedby="sheet-time-format" data-sheet-time';
   const finishDate = key === 'endTime'
     ? `<label class="field">Fecha de fin<input type="date" name="endDate" value="${row.endDate || row.date}"></label>` : '';
   const clear = key === 'date' ? '' : '<button type="button" class="btn plain" data-cell-command="clear">Borrar</button>';
   return `<form class="cell-form">
-    <label class="field">${label}<input type="${inputType}" name="value" value="${row[key]}" required></label>
+    <label class="field">${label}<input ${inputAttributes} name="value" value="${row[key]}" required></label>
+    ${key === 'date' ? '' : '<p id="sheet-time-format" class="field-note">24 horas · Ej. 18:05</p>'}
     ${finishDate}
     <div class="actions">${clear}<button type="submit" class="btn primary">Guardar</button></div>
   </form>`;
@@ -516,11 +540,19 @@ cellEditor.addEventListener('input', event => {
     if (input.name === 'value' && !form.dataset.manualEndDate) {
       const row = sheetRecords(activeTurn().records).get(editingCell.slot);
       if (row.endDate && row.endDate !== row.date && row.endDate !== shiftDate(row.date, 1)) return;
-      const nextDate = row.time && input.value && input.value < row.time ? shiftDate(row.date, 1) : row.date;
+      const time = parseSheetTime(input.value);
+      if (!time) return;
+      const nextDate = row.time && time < row.time ? shiftDate(row.date, 1) : row.date;
       form.elements.endDate.value = validDate(nextDate) ? nextDate : row.date;
     }
   }
   positionCellEditor();
+});
+
+cellEditor.addEventListener('focusout', event => {
+  if (!event.target.matches('[data-sheet-time]')) return;
+  const time = parseSheetTime(event.target.value);
+  if (time) event.target.value = time;
 });
 
 cellEditor.addEventListener('submit', event => {
@@ -530,7 +562,9 @@ cellEditor.addEventListener('submit', event => {
   const value = data.get('value');
   saveCell(row => {
     if (key !== 'date') {
-      setSheetTime(row, key, value, data.get('endDate'));
+      const time = parseSheetTime(value);
+      if (!time) throw new Error('Ingresa una hora entre 00:00 y 23:59.');
+      setSheetTime(row, key, time, data.get('endDate'));
       return;
     }
     if (!validDate(value)) throw new Error('Revisa la fecha ingresada.');
@@ -612,8 +646,9 @@ function openFiles(title, description, files) {
 }
 
 async function exportReport(turn, format) {
-  const logo = await logoReady;
-  const pages = currentPages.length ? currentPages : reportPages(turn, catalogFor(turn), logo);
+  const previewPages = currentPages;
+  const logo = await loadPaperLogo(selectedPaperLogo());
+  const pages = previewPages.length ? previewPages : reportPages(turn, catalogFor(turn), logo);
   const filename = filenameFor(turn);
   const files = format === 'png' ? pngFiles(pages, filename) : [pdfFile(pages, filename)];
   const description = format === 'png'
@@ -828,7 +863,15 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
-  if (event.target.id === 'catalog-scope') {
+  if (event.target.id === 'paper-logo-select') {
+    try {
+      updateState(next => { next.paperLogo = event.target.value; });
+    } catch (error) {
+      notify(error.message);
+    }
+    render();
+    document.querySelector('#paper-logo-select').focus({ preventScroll: true });
+  } else if (event.target.id === 'catalog-scope') {
     catalogScope = event.target.value;
     render();
     document.querySelector('#catalog-scope').focus();

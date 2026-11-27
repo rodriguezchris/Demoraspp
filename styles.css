@@ -161,12 +161,15 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
 .sheet-workspace .subtitle { font-size: .88rem; margin-top: 5px; }
 .paper { padding: 27px clamp(16px, 3.6vw, 45px) 35px; color: #141414; background: #fff; border: 1px solid #d5ddd7; }
 .paper-heading { margin-bottom: 17px; }
-.paper-heading img { display: block; width: 157px; height: auto; }
+.paper-heading img { display: block; width: 157px; height: 60px; object-fit: contain; object-position: left center; }
 .paper-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 38px; margin: 20px 0 0; }
-.paper-fields > div { display: grid; grid-template-columns: 83px minmax(0, 1fr); align-items: end; gap: 5px; }
-.paper-fields dt { text-transform: uppercase; font-size: .76rem; font-weight: 760; }
+.paper-fields > div { display: grid; grid-template-columns: 83px minmax(0, 1fr); gap: 5px; }
+.paper-fields dt, .paper-fields dd { font-size: .84rem; line-height: 1.35; }
+.paper-fields dt { text-transform: uppercase; font-weight: 760; }
 .paper-fields dt::after { content: ":"; }
-.paper-fields dd { min-height: 24px; margin: 0; border-bottom: 1px solid #141414; padding: 0 3px 2px; font-size: .9rem; font-weight: 620; overflow-wrap: anywhere; }
+.paper-fields dd { min-height: 24px; margin: 0; border-bottom: 1px solid #141414; padding: 0 3px 3px; font-weight: 620; overflow-wrap: anywhere; }
+.logo-picker { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .86rem; font-weight: 650; }
+.logo-picker select { width: auto; min-height: 44px; padding-inline: 9px 30px; font-size: .9rem; }
 .paper-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
 .sheet-grid { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: center; }
 .sheet-grid col.column-date { width: 13%; }
@@ -209,9 +212,9 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   .sheet-workspace .page-heading { align-items: flex-start; }
   .paper { padding: 15px 5px 20px; }
   .paper-heading { padding-inline: 5px; margin-bottom: 12px; }
-  .paper-heading img { width: 121px; }
+  .paper-heading img { width: 121px; height: 47px; }
   .paper-fields { gap: 10px 12px; margin-top: 14px; }
-  .paper-fields > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .paper-fields > div { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 0; }
   .paper-fields dt { font-size: .7rem; }
   .paper-fields dd { font-size: .84rem; }
   .sheet-grid { min-width: 570px; }
