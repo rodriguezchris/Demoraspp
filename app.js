@@ -4,7 +4,11 @@ import {
   shortDate, sortedCodes, storageKey, timestamp, transfer,
   validCodeNumber, validDate, validTime,
 } from './model.js';
-import { filenameFor, pdfFile, pngFiles, reportPages } from './report.js';
+import { countReportPages, filenameFor, pdfFile, pngFiles, reportPages } from './report.js';
+import {
+  countColumns, countFields, countNumber, countTransfer, countTransferFormat, countValues,
+  equipmentKey, readCountTransfer, sheetTotal, suggestInterval, validateCountRow, validateCountSheet,
+} from './almejazos.js';
 
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
@@ -74,6 +78,9 @@ const button = (label, action, variant = 'secondary', glyph = '', id = '', extra
 const iconButton = (label, action, glyph, id = '', extra = '') =>
   `<button type="button" class="icon-button ${extra}" aria-label="${label}" title="${label}" data-action="${action}" data-id="${esc(id)}">${icon(glyph, 18)}</button>`;
 const activeTurn = () => state.turns.find(turn => turn.id === state.activeId);
+const countSheets = (source = state) => source.countSheets ?? [];
+const activeCountSheet = () => countSheets().find(sheet => sheet.id === state.activeCountId) ?? countSheets()[0];
+const isCountView = () => view === 'counts' || view === 'count-report';
 const catalogFor = turn => turn?.catalog ?? state.catalog;
 const scopedCatalog = () => catalogScope === 'turn' ? catalogFor(activeTurn()) : state.catalog;
 const countLabel = count => count + (count === 1 ? ' movimiento' : ' movimientos');
@@ -103,6 +110,16 @@ function updateTurn(id, update) {
     if (!turn) throw new Error('El turno ya no está disponible.');
     update(turn, next);
     turn.updatedAt = timestamp();
+  });
+}
+
+function updateCountSheet(id, update) {
+  updateState(next => {
+    const sheet = countSheets(next).find(item => item.id === id);
+    if (!sheet) throw new Error('La hoja ya no está disponible.');
+    update(sheet, next);
+    if (!Number.isFinite(sheetTotal(sheet))) throw new Error('El total de la hoja está fuera del rango permitido.');
+    sheet.updatedAt = timestamp();
   });
 }
 
@@ -141,27 +158,35 @@ function render() {
   currentPages = [];
   const turn = activeTurn();
   const today = dateWithWords(nowLocal().date);
-  const title = navItems.find(item => item[0] === view)[1];
+  const counts = isCountView();
+  const sheet = activeCountSheet();
+  const title = counts ? 'Almejazos' : navItems.find(item => item[0] === view)[1];
+  const tabs = [['turn', 'Demoras', !counts], ['counts', 'Almejazos', counts]].map(([key, label, active]) =>
+    `<button type="button" class="sheet-type${active ? ' active' : ''}" data-action="navigate" data-id="${key}" ${active ? 'aria-current="true"' : ''}>${label}</button>`).join('');
+  const content = view === 'counts' ? renderCounts(sheet) : view === 'count-report' ? renderCountReport(sheet)
+    : view === 'archive' ? renderArchive() : view === 'catalog' ? renderCatalog()
+      : view === 'report' ? renderReport(turn) : renderTurn(turn);
   app.innerHTML = `<div class="workspace">
     <aside class="rail">
       <div class="brand"><span class="brand-mark">${icon('clipboard', 21)}</span>Bitácora de Muelle</div>
-      <nav aria-label="Navegación principal">${navItems.map(([key, name, glyph]) => `<button type="button" class="nav-button${view === key ? ' active' : ''}" data-action="navigate" data-id="${key}"${view === key ? ' aria-current="page"' : ''}>
-        ${icon(glyph)}${key === 'archive' ? '<span class="desktop-only">Turnos guardados</span><span class="mobile-only">Turnos</span>' : esc(name)}</button>`).join('')}</nav>
+      ${counts ? '' : `<nav aria-label="Navegación principal">${navItems.map(([key, name, glyph]) => `<button type="button" class="nav-button${view === key ? ' active' : ''}" data-action="navigate" data-id="${key}"${view === key ? ' aria-current="page"' : ''}>
+        ${icon(glyph)}${key === 'archive' ? '<span class="desktop-only">Turnos guardados</span><span class="mobile-only">Turnos</span>' : esc(name)}</button>`).join('')}</nav>`}
       <div class="rail-status" id="connection"></div>
     </aside>
     <div class="surface">
       <header class="topbar"><span class="topbar-label">${icon('box', 17)} ${esc(title)}</span><span class="topbar-date">${icon('calendar', 17)} ${esc(today)}</span></header>
-      <main aria-labelledby="page-title">${view === 'archive' ? renderArchive() : view === 'catalog' ? renderCatalog() : view === 'report' ? renderReport(turn) : renderTurn(turn)}</main>
+      <nav class="sheet-types" aria-label="Tipo de hoja">${tabs}</nav>
+      <main aria-labelledby="page-title">${content}</main>
     </div>
   </div>`;
   renderConnection();
   const paperScroll = document.querySelector('.paper-scroll');
   if (paperScroll) paperScroll.scrollLeft = sheetScroll;
-  if (view === 'report' && turn) {
+  if ((view === 'report' && turn) || (view === 'count-report' && sheet)) {
     const preview = document.querySelector('#report-pages');
     loadPaperLogo(selectedPaperLogo()).then(logo => {
       if (!preview.isConnected) return;
-      currentPages = reportPages(turn, catalogFor(turn), logo);
+      currentPages = counts ? countReportPages(sheet, logo) : reportPages(turn, catalogFor(turn), logo);
       preview.replaceChildren(...currentPages);
     });
   }
@@ -277,6 +302,154 @@ function renderReport(turn) {
   return heading('Hoja del turno', esc(turn.ship + ' · ' + shortDate(turn.date)),
     renderLogoPicker() + button('Imagen PNG', 'png', 'secondary', 'picture') + button('PDF', 'pdf', 'primary', 'file'))
     + '<div class="report-area" id="report-pages" aria-label="Vista previa de la hoja"></div>';
+}
+
+function renderCounts(sheet) {
+  const actions = button('Importar registro', 'import', 'secondary', 'down')
+    + button('Nueva hoja', 'new-count-sheet', sheet ? 'secondary' : 'primary', 'plus');
+  if (!sheet) {
+    return heading('Hoja de almejazos', '', actions)
+      + `<section class="card">${emptyPanel('clipboard', 'Crea una hoja por bodega',
+        'Registra la cantidad de almejazos al terminar cada intervalo.')}</section>`;
+  }
+
+  const options = countSheets().map(item =>
+    `<option value="${esc(item.id)}"${item.id === sheet.id ? ' selected' : ''}>
+      ${esc(item.hold + ' · ' + item.ship + ' · ' + shortDate(item.date))}
+    </option>`).join('');
+  const metadata = countFields(sheet).map(([label, value]) =>
+    `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('');
+  const rows = sheet.rows.map((row, index) => {
+    const cells = countValues(row, index, sheet.rows[index - 1]?.date).map((value, column) =>
+      `<td>${column === 3 ? `<button type="button" class="sheet-cell" aria-label="Editar fila ${index + 1}, ${row.quantity} almejazos"
+        data-action="edit-count-row" data-id="${esc(row.id)}">${value}</button>` : esc(value)}</td>`).join('');
+    return `<tr data-count-row>${cells}</tr>`;
+  }).join('');
+  return `<div class="sheet-workspace">
+    ${heading('Hoja de almejazos', '', actions)}
+    <div class="count-tools">
+      <label class="field count-sheet-select">Hoja de bodega<select id="count-sheet-select">${options}</select></label>
+      <div class="actions">
+        ${button('Anotar intervalo', 'new-count-row', 'primary', 'plus')}
+        ${button('Editar datos', 'edit-count-sheet', 'secondary', 'edit')}
+        ${button('Vista previa', 'count-report', 'secondary', 'file')}
+      </div>
+    </div>
+    <section class="paper count-paper" aria-label="Formato de almejazos">
+      <header class="paper-heading">
+        <div class="count-paper-head">
+          <img src="${paperLogoFiles[selectedPaperLogo()]}" alt="Intertek" width="157" height="60">
+          <h2>Control Record</h2>
+        </div>
+        <dl class="paper-fields">${metadata}</dl>
+      </header>
+      <div class="paper-scroll" tabindex="0" aria-label="Tabla de almejazos">
+        <table class="sheet-grid count-grid">
+          <colgroup>${countColumns.map(([, width]) => `<col style="--count-column-width:${width / 702 * 100}%">`).join('')}</colgroup>
+          <thead><tr>${countColumns.map(([label]) => `<th scope="col">${label}</th>`).join('')}</tr></thead>
+          <tbody>${rows || `<tr><td colspan="7">${button('Anotar el primer intervalo', 'new-count-row', 'plain')}</td></tr>`}</tbody>
+          <tfoot><tr><th colspan="6" scope="row">Total turno</th><td>${countNumber(sheetTotal(sheet))}</td></tr></tfoot>
+        </table>
+      </div>
+    </section>
+    <div class="sheet-footer">${renderLogoPicker()}
+      ${button('Transferir registro', 'transfer-count-sheet', 'secondary', 'transfer')}
+    </div>
+  </div>`;
+}
+
+function renderCountReport(sheet) {
+  const back = button('Volver a Almejazos', 'navigate', 'secondary', 'clipboard', 'counts');
+  if (!sheet) return heading('Vista previa de almejazos', '', back);
+  return heading('Vista previa de almejazos', esc(sheet.ship + ' · ' + sheet.hold),
+    back + renderLogoPicker() + button('Imagen PNG', 'png', 'secondary', 'picture') + button('PDF', 'pdf', 'primary', 'file'))
+    + '<div class="report-area" id="report-pages" aria-label="Vista previa de la hoja"></div>';
+}
+
+function showCountSheetForm(sheet = null) {
+  const turn = activeTurn();
+  const fields = [
+    field('Buque', 'ship', sheet?.ship ?? turn?.ship, { attributes: 'required maxlength="100"' }),
+    field('Bodega', 'hold', sheet?.hold, { attributes: 'required maxlength="30" placeholder="Ej. B2"' }),
+    field('Puerto / terminal', 'terminal', sheet?.terminal, { attributes: 'maxlength="100"' }),
+    field('Producto', 'product', sheet?.product ?? turn?.product, { attributes: 'maxlength="100"' }),
+    field('Fecha de la hoja', 'date', sheet?.date ?? nowLocal().date, { type: 'date', attributes: 'required' }),
+  ].join('');
+  const remove = sheet ? button('Eliminar hoja', 'delete-count-sheet', 'plain', 'trash', sheet.id, 'push') : '';
+
+  showForm(sheet ? 'Editar datos de la hoja' : 'Nueva hoja de almejazos', fields, data => {
+    const details = Object.fromEntries([...data].map(([key, value]) => [key, value.trim()]));
+    if (sheet) {
+      updateCountSheet(sheet.id, current => {
+        Object.assign(current, details);
+        validateCountSheet(current);
+      });
+      return;
+    }
+    const created = { ...details, id: newId(), updatedAt: timestamp(), rows: [] };
+    validateCountSheet(created);
+    saveCountSheet(created);
+  }, remove);
+}
+
+function showCountRowForm(sheet, row = null) {
+  const defaults = new Map(Object.entries(state.equipmentCapacities ?? {}));
+  for (const entry of [...sheet.rows].reverse()) {
+    const key = equipmentKey(entry.equipment);
+    if (!defaults.has(key)) defaults.set(key, entry.capacity);
+  }
+  const values = row ?? suggestInterval(sheet);
+  const capacity = row?.capacity ?? defaults.get(equipmentKey(values.equipment ?? ''));
+  const options = [...defaults.keys()].map(key => `<option value="${esc(key)}"></option>`).join('');
+  const fields = [
+    field('Cantidad', 'quantity', row?.quantity, { full: true, type: 'number', attributes: 'required min="0" step="1" inputmode="numeric" autofocus' }),
+    field('Desde (24 h)', 'start', values.start, { attributes: 'required maxlength="5" inputmode="numeric"' }),
+    field('Hasta (24 h)', 'end', values.end, { attributes: 'required maxlength="5" inputmode="numeric"' }),
+    field('Nro. Almeja', 'equipment', values.equipment, { attributes: 'required maxlength="30" list="count-equipment"' }),
+    field('Capacidad almeja', 'capacity', capacity === undefined ? '' : String(capacity), {
+      attributes: 'required inputmode="decimal"', note: 'Se recuerda para esta almeja.',
+    }),
+    field('Fecha de inicio', 'date', values.date, { full: true, type: 'date', attributes: 'required' }),
+    `<datalist id="count-equipment">${options}</datalist>`,
+  ].join('');
+  const remove = row ? button('Eliminar fila', 'delete-count-row', 'plain', 'trash', row.id, 'push') : '';
+  const form = showForm(row ? 'Editar intervalo' : 'Anotar intervalo', fields, data => {
+    const equipment = equipmentKey(data.get('equipment'));
+    const capacityText = data.get('capacity').trim().replace(',', '.');
+    const quantityText = data.get('quantity').trim();
+    const saved = {
+      id: row?.id ?? newId(), date: data.get('date'), start: parseSheetTime(data.get('start')),
+      end: parseSheetTime(data.get('end')), equipment,
+      capacity: /^\d*\.?\d+(?:e[+-]?\d+)?$/i.test(capacityText) ? Number(capacityText) : NaN,
+      quantity: quantityText === '' ? NaN : Number(quantityText),
+    };
+    validateCountRow(saved);
+    updateCountSheet(sheet.id, (current, next) => {
+      if (row) {
+        const index = current.rows.findIndex(entry => entry.id === row.id);
+        if (index < 0) throw new Error('La fila ya no está disponible.');
+        current.rows[index] = saved;
+      } else {
+        if (current.rows.length >= maxSheetRows) throw new Error('La hoja llegó al máximo de filas.');
+        current.rows.push(saved);
+      }
+      const knownCapacity = defaults.get(equipment);
+      if ((!row || equipment !== equipmentKey(row.equipment) || saved.capacity !== row.capacity)
+        && (knownCapacity === undefined || saved.capacity !== knownCapacity)) {
+        next.equipmentCapacities = { ...next.equipmentCapacities, [equipment]: saved.capacity };
+      }
+    });
+  }, remove);
+  const equipmentInput = form.elements.namedItem('equipment');
+  const capacityInput = form.elements.namedItem('capacity');
+  let key = equipmentKey(equipmentInput.value);
+  equipmentInput.addEventListener('input', () => {
+    const currentKey = equipmentKey(equipmentInput.value);
+    if (currentKey === key) return;
+    key = currentKey;
+    const known = row && key === equipmentKey(row.equipment) ? row.capacity : defaults.get(key);
+    capacityInput.value = known === undefined ? '' : String(known);
+  });
 }
 
 function openDialog(title, content) {
@@ -754,7 +927,7 @@ function openFiles(title, description, files) {
   });
 }
 
-function showPngExport(turn, logo) {
+function showPngExport(makePages, filename) {
   const now = new Date();
   const pad = value => String(value).padStart(2, '0');
   const date = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join('-');
@@ -792,8 +965,7 @@ function showPngExport(turn, logo) {
     const imageTimestamp = `${Number(day)} ${months[Number(month) - 1]} ${year}, ${chosenTime}`;
 
     try {
-      const pages = reportPages(turn, catalogFor(turn), logo, { imageTimestamp });
-      const files = pngFiles(pages, filenameFor(turn));
+      const files = pngFiles(makePages({ imageTimestamp }), filename);
       const description = files.length === 1
         ? 'Imagen lista para enviar por WhatsApp.'
         : 'Se generó una imagen por hoja.';
@@ -804,18 +976,55 @@ function showPngExport(turn, logo) {
   });
 }
 
-async function exportReport(turn, format) {
+function countFilename(sheet) {
+  return filenameFor({ ...sheet, ship: sheet.ship + '-' + sheet.hold }).replace(/^bitacora-/, 'almejazos-');
+}
+
+async function exportReport(turn, format, sheet = null) {
   const previewPages = currentPages;
   const logo = await loadPaperLogo(selectedPaperLogo());
+  const makePages = options => sheet ? countReportPages(sheet, logo, options)
+    : reportPages(turn, catalogFor(turn), logo, options);
+  const filename = sheet ? countFilename(sheet) : filenameFor(turn);
 
   if (format === 'png') {
-    showPngExport(turn, logo);
+    showPngExport(makePages, filename);
     return;
   }
 
-  const pages = previewPages.length ? previewPages : reportPages(turn, catalogFor(turn), logo);
-  const file = pdfFile(pages, filenameFor(turn));
-  openFiles('PDF del turno', 'Todas las hojas del turno están en un solo PDF.', [file]);
+  const pages = previewPages.length ? previewPages : makePages();
+  const file = pdfFile(pages, filename);
+  openFiles(sheet ? 'PDF de almejazos' : 'PDF del turno', 'Todas las hojas del turno están en un solo PDF.', [file]);
+}
+
+function exportCountTransfer(sheet) {
+  const file = new File([JSON.stringify(countTransfer(sheet), null, 2)],
+    countFilename(sheet) + '.json', { type: 'application/json' });
+  openFiles('Transferir registro', 'Envía este archivo para que otro inspector pueda continuar el conteo de esta bodega.', [file]);
+}
+
+function saveCountSheet(incoming, choice = 'new', expectedVersion = null) {
+  updateState(next => {
+    next.countSheets ??= [];
+    const index = next.countSheets.findIndex(sheet => sheet.id === incoming.id);
+    if (choice === 'replace') {
+      if (index < 0 || next.countSheets[index].updatedAt !== expectedVersion) {
+        throw new Error('La hoja cambió. Vuelve a importar para revisar las versiones actualizadas.');
+      }
+      next.countSheets[index] = incoming;
+    } else {
+      if (choice === 'copy') incoming = { ...incoming, id: newId() };
+      else if (index !== -1) throw new Error('Esta hoja ya está guardada. Vuelve a importarla para comparar las versiones.');
+      next.countSheets.push(incoming);
+    }
+    next.equipmentCapacities ??= {};
+    for (const row of [...incoming.rows].reverse()) {
+      const key = equipmentKey(row.equipment);
+      if (!Object.hasOwn(next.equipmentCapacities, key)) next.equipmentCapacities[key] = row.capacity;
+    }
+    next.activeCountId = incoming.id;
+  });
+  view = 'counts';
 }
 
 function exportTransfer(turn) {
@@ -849,9 +1058,54 @@ const versionDate = new Intl.DateTimeFormat('es-HN', {
   timeZone: 'America/Tegucigalpa', dateStyle: 'short', timeStyle: 'short',
 });
 
+function chooseImportVersion(title, name, existing, incoming, exportedAt, describe, onChoice) {
+  openDialog(title, `<p>Compara las versiones de <strong>${esc(name)}</strong>.</p>
+    <div class="import-versions">
+      <p>En este teléfono · ${versionDate.format(new Date(existing.updatedAt))} · ${describe(existing)}</p>
+      <p>En el archivo · ${versionDate.format(new Date(incoming.updatedAt))} · ${describe(incoming)}</p>
+      <p class="muted-note">Archivo generado el ${versionDate.format(new Date(exportedAt))}.</p>
+    </div><p class="error" role="alert"></p>
+    <div class="modal-actions">${button('Conservar actual', 'close-dialog', 'secondary')}
+    <button type="button" class="btn secondary" id="import-copy">Guardar copia</button><button type="button" class="btn primary" id="import-replace">Sustituir</button></div>`);
+
+  for (const choice of ['copy', 'replace']) {
+    dialog.querySelector('#import-' + choice).addEventListener('click', () => {
+      try {
+        onChoice(choice);
+        dialog.close();
+        render();
+      } catch (error) {
+        dialog.querySelector('.error').textContent = error.message;
+      }
+    });
+  }
+}
+
 async function importRecord(file) {
   try {
-    const { turn, exportedAt } = readTransfer(await file.text());
+    const text = await file.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('El archivo no tiene un formato válido.');
+    }
+    if (data?.format === countTransferFormat) {
+      const { sheet, exportedAt } = readCountTransfer(data);
+      const existing = countSheets().find(item => item.id === sheet.id);
+      if (existing) {
+        chooseImportVersion('Esta hoja ya existe', sheet.ship + ' · ' + sheet.hold, existing, sheet, exportedAt,
+          item => item.rows.length + (item.rows.length === 1 ? ' intervalo' : ' intervalos'),
+          choice => { saveCountSheet(sheet, choice, existing.updatedAt); notify('Registro importado.'); });
+      } else {
+        saveCountSheet(sheet);
+        notify('Registro importado.');
+        render();
+      }
+      return;
+    }
+
+    const { turn, exportedAt } = readTransfer(text);
     const existing = state.turns.find(item => item.id === turn.id);
     if (!existing) {
       saveImport(turn);
@@ -859,29 +1113,13 @@ async function importRecord(file) {
       return;
     }
 
-    openDialog('Este turno ya existe', `<p>Compara las versiones de <strong>${esc(turn.ship)}</strong>.</p>
-      <div class="import-versions">
-        <p>En este teléfono · ${versionDate.format(new Date(existing.updatedAt))} · ${countLabel(existing.records.length)}</p>
-        <p>En el archivo · ${versionDate.format(new Date(turn.updatedAt))} · ${countLabel(turn.records.length)}</p>
-        <p class="muted-note">Archivo generado el ${versionDate.format(new Date(exportedAt))}.</p>
-      </div><p class="error" role="alert"></p>
-      <div class="modal-actions">${button('Conservar actual', 'close-dialog', 'secondary')}
-      <button type="button" class="btn secondary" id="import-copy">Guardar copia</button><button type="button" class="btn primary" id="import-replace">Sustituir</button></div>`);
-
-    for (const choice of ['copy', 'replace']) {
-      dialog.querySelector('#import-' + choice).addEventListener('click', () => {
-        try {
-          if (choice === 'replace' && loadState().turns.find(item => item.id === turn.id)?.updatedAt !== existing.updatedAt) {
-            throw new Error('El turno cambió. Vuelve a importar para revisar las versiones actualizadas.');
-          }
-          saveImport(turn, choice);
-          dialog.close();
-          render();
-        } catch (error) {
-          dialog.querySelector('.error').textContent = error.message;
+    chooseImportVersion('Este turno ya existe', turn.ship, existing, turn, exportedAt,
+      item => countLabel(item.records.length), choice => {
+        if (choice === 'replace' && loadState().turns.find(item => item.id === turn.id)?.updatedAt !== existing.updatedAt) {
+          throw new Error('El turno cambió. Vuelve a importar para revisar las versiones actualizadas.');
         }
+        saveImport(turn, choice);
       });
-    }
   } catch (error) {
     notify(error.message || 'No se pudo importar el registro.');
   }
@@ -889,10 +1127,12 @@ async function importRecord(file) {
 
 document.addEventListener('click', async event => {
   const button = event.target.closest('button[data-action]')
+    ?? event.target.closest('[data-count-row] td')?.parentElement.querySelector('.sheet-cell')
     ?? event.target.closest('.sheet-grid td')?.querySelector('.sheet-cell');
   if (!button) return;
   const { action, id } = button.dataset;
   const turn = activeTurn();
+  const sheet = activeCountSheet();
   if (action !== 'edit-cell' && !cellEditor.contains(button)) closeCell();
   try {
     switch (action) {
@@ -903,6 +1143,43 @@ document.addEventListener('click', async event => {
         render();
         document.querySelector('#page-title').focus({ preventScroll: true });
         window.scrollTo(0, 0);
+        break;
+      case 'new-count-sheet':
+        showCountSheetForm();
+        break;
+      case 'edit-count-sheet':
+        showCountSheetForm(sheet);
+        break;
+      case 'delete-count-sheet':
+        confirmAction('Eliminar hoja', 'Se eliminarán esta hoja y sus intervalos de este dispositivo.', 'Eliminar hoja', () => {
+          updateState(next => {
+            next.countSheets = countSheets(next).filter(item => item.id !== id);
+            if (next.activeCountId === id) next.activeCountId = next.countSheets[0]?.id ?? null;
+          });
+          notify('Hoja eliminada.');
+        });
+        break;
+      case 'new-count-row':
+        showCountRowForm(sheet);
+        break;
+      case 'edit-count-row': {
+        const row = sheet.rows.find(item => item.id === id);
+        if (row) showCountRowForm(sheet, row);
+        break;
+      }
+      case 'delete-count-row':
+        confirmAction('Eliminar intervalo', 'Se restará su cantidad del total de la hoja.', 'Eliminar intervalo', () => {
+          updateCountSheet(sheet.id, current => { current.rows = current.rows.filter(row => row.id !== id); });
+          notify('Intervalo eliminado.');
+        });
+        break;
+      case 'count-report':
+        view = 'count-report';
+        render();
+        window.scrollTo(0, 0);
+        break;
+      case 'transfer-count-sheet':
+        exportCountTransfer(sheet);
         break;
       case 'new-turn':
         showTurnForm();
@@ -989,7 +1266,7 @@ document.addEventListener('click', async event => {
       }
       case 'png':
       case 'pdf':
-        await exportReport(turn, action);
+        await exportReport(turn, action, view === 'count-report' ? sheet : null);
         break;
       case 'transfer':
         exportTransfer(turn);
@@ -1032,6 +1309,17 @@ document.addEventListener('change', event => {
     }
     render();
     document.querySelector('#paper-logo-select').focus({ preventScroll: true });
+  } else if (event.target.id === 'count-sheet-select') {
+    try {
+      updateState(next => {
+        if (!countSheets(next).some(sheet => sheet.id === event.target.value)) throw new Error('La hoja ya no está disponible.');
+        next.activeCountId = event.target.value;
+      });
+    } catch (error) {
+      notify(error.message);
+    }
+    render();
+    document.querySelector('#count-sheet-select')?.focus({ preventScroll: true });
   } else if (event.target.id === 'catalog-scope') {
     catalogScope = event.target.value;
     render();

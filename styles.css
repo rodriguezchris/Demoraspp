@@ -265,3 +265,57 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   .sheet-grid th { padding-inline: 3px; font-size: .7rem; }
   .sheet-cell { min-height: 42px; padding: 3px 1px; font-size: .79rem; }
 }
+
+.sheet-types {
+  display: flex;
+  gap: 7px;
+  padding: 5px max(5.2vw, 24px) 0;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfb;
+}
+.sheet-type {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 680;
+}
+.sheet-type:hover { background: #edf4ee; }
+.sheet-type.active { border-bottom-color: var(--green); color: var(--green-dark); }
+.count-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; margin-bottom: 13px; }
+.count-sheet-select { flex: 1 1 175px; max-width: 360px; }
+.count-paper-head { display: flex; align-items: center; gap: 10px; }
+.count-paper-head h2 {
+  flex: 1;
+  text-align: center;
+  font-size: clamp(1rem, 2.4vw, 1.45rem);
+  text-transform: uppercase;
+  text-decoration: underline;
+}
+.count-paper .paper-fields > div { grid-template-columns: 116px minmax(0, 1fr); }
+.count-grid { min-width: 470px; font-variant-numeric: tabular-nums; }
+.count-grid col { width: var(--count-column-width); }
+.count-grid tbody td { border-bottom: 1px solid #171717; }
+.count-grid [data-count-row] td { padding: 2px 3px; overflow-wrap: anywhere; cursor: pointer; }
+.count-grid [data-count-row]:hover td, .count-grid [data-count-row]:hover .sheet-cell { background: #eaf3ec; }
+.count-grid tfoot th { text-align: right; padding: 4px 8px; text-transform: uppercase; }
+.count-grid tfoot td { background: #f7f7f7; font-weight: 730; overflow-wrap: anywhere; }
+
+@media (max-width: 700px) {
+  .sheet-types { padding: 2px 12px 0; }
+  .sheet-type { flex: 1; }
+  .count-paper .paper-fields > div { grid-template-columns: minmax(0, 1fr); }
+  .count-sheet-select { flex-basis: 100%; max-width: 100%; }
+  .count-grid { min-width: 348px; font-size: .72rem; }
+  .count-grid th { font-size: .58rem; padding-inline: 2px; }
+  .count-grid col:nth-child(1) { width: 6%; }
+  .count-grid col:nth-child(2) { width: 18%; }
+  .count-grid col:nth-child(3) { width: 21%; }
+  .count-grid col:nth-child(4) { width: 14%; }
+  .count-grid col:nth-child(5) { width: 12%; }
+  .count-grid col:nth-child(6) { width: 15%; }
+  .count-grid col:nth-child(7) { width: 14%; }
+  .count-grid [data-count-row] td:nth-child(2), .count-grid [data-count-row] td:nth-child(3) { white-space: nowrap; }
+}
