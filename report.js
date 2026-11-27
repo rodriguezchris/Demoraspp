@@ -1,13 +1,13 @@
-import { shortDate, sortedRecords } from './model.js';
+import { delayLegend, rowsPerSheet, sheetRecords, shortDate } from './model.js';
 
 const width = 794;
 const height = 1123;
 const margin = 46;
 const endOfTable = 1044;
 const columns = [
-  ['Fecha', 90], ['Desde', 62], ['Hasta', 94], ['Bodegas', 105], ['Código', 70], ['Descripción del movimiento', 281],
+  ['Fecha', 84], ['Desde', 80], ['Hasta', 80], ['Bodega', 83],
+  ['Tipo de demora', 84], ['', 36], ['Descripción de la demora', 255],
 ];
-const colors = { green: '#15362f', text: '#202b27', muted: '#56655e', rule: '#d4ded9' };
 
 function font(context, size, weight = 400) {
   context.font = weight + ' ' + size + 'px Arial, sans-serif';
@@ -48,96 +48,130 @@ function createPage() {
   return { canvas, context };
 }
 
-function pageHeading(context, turn) {
-  context.fillStyle = colors.green;
-  context.fillRect(margin, 42, width - margin * 2, 4);
-  font(context, 31, 700);
-  context.fillText('Hoja de movimientos de descarga', margin, 69);
-  font(context, 14, 600);
-  context.fillStyle = colors.muted;
-  context.fillText('Fecha del turno   ' + shortDate(turn.date), margin, 111);
+function pageHeading(context, turn, logo) {
+  if (logo) {
+    const scale = Math.min(179 / logo.naturalWidth, 68 / logo.naturalHeight);
+    context.drawImage(logo, margin, 59, logo.naturalWidth * scale, logo.naturalHeight * scale);
+  } else {
+    font(context, 33, 700);
+    context.fillStyle = '#171717';
+    context.fillText('intertek', margin, 59);
+    font(context, 12, 700);
+    context.fillText('Total Quality. Assured.', margin, 99);
+  }
 
   const fields = [
-    ['Buque', turn.ship], ['Inspector', turn.inspector],
-    ['Producto', turn.product], ['Cliente', turn.client],
+    ['BARCO', turn.ship], ['INSPECTOR', turn.inspector],
+    ['PRODUCTO', turn.product], ['CLIENTE', turn.client],
   ];
-  let y = 149;
+  const columnGap = 30;
+  const columnWidth = (width - 2 * margin - columnGap) / 2;
+  const labelWidth = 84;
+  const valueWidth = columnWidth - labelWidth;
+  const lineHeight = 17;
+  let y = 141;
   for (let index = 0; index < fields.length; index += 2) {
-    let rowHeight = 0;
-    fields.slice(index, index + 2).forEach(([label, value], column) => {
-      const x = margin + column * 351;
+    font(context, 13, 600);
+    const pair = fields.slice(index, index + 2).map(([label, value]) => ({
+      label, parts: lines(context, value, valueWidth - 4),
+    }));
+    const rowHeight = Math.max(...pair.map(({ parts }) => parts.length)) * lineHeight + 5;
+    pair.forEach(({ label, parts }, column) => {
+      const x = margin + column * (columnWidth + columnGap);
+      const valueX = x + labelWidth;
+      context.fillStyle = '#171717';
       font(context, 13, 700);
-      context.fillStyle = colors.muted;
-      context.fillText(label.toUpperCase(), x, y);
-      font(context, 17, 600);
-      context.fillStyle = colors.text;
-      const wrapped = lines(context, value || '—', 326);
-      wrapped.forEach((part, line) => context.fillText(part, x, y + 20 + line * 20));
-      rowHeight = Math.max(rowHeight, 20 * wrapped.length);
+      context.fillText(label + ':', x, y);
+      font(context, 13, 600);
+      parts.forEach((part, line) => context.fillText(part, valueX + 2, y + line * lineHeight));
+      context.fillRect(valueX, y + rowHeight, valueWidth, 1);
     });
-    y += rowHeight + 35;
+    y += rowHeight + 11;
   }
+  y += 11;
 
-  context.fillStyle = colors.green;
-  context.fillRect(margin, y, width - margin * 2, 36);
-  context.fillStyle = '#fff';
-  font(context, 13, 700);
+  context.strokeStyle = '#161616';
+  context.fillStyle = '#161616';
+  context.lineWidth = 1.1;
+  context.textAlign = 'center';
+  font(context, 12, 700);
   let x = margin;
-  for (const [label, columnWidth] of columns) {
-    context.fillText(label, x + 10, y + 10);
+  const headers = [
+    ...columns.slice(0, 5),
+    [columns[6][0], columns[5][1] + columns[6][1]],
+  ];
+  for (const [label, columnWidth] of headers) {
+    context.strokeRect(x, y, columnWidth, 35);
+    if (label === 'Tipo de demora') {
+      context.fillText('TIPO DE', x + columnWidth / 2, y + 5);
+      context.fillText('DEMORA', x + columnWidth / 2, y + 18);
+    } else {
+      context.fillText(label.toUpperCase(), x + columnWidth / 2, y + 11);
+    }
     x += columnWidth;
   }
-  return y + 36;
+  context.textAlign = 'left';
+  return y + 35;
 }
 
-function prepareRow(context, record) {
-  const until = record.endTime && record.endDate !== record.date
-    ? record.endTime + ' ' + shortDate(record.endDate) : record.endTime;
-  const values = [shortDate(record.date), record.time, until, record.holds.join(', '), record.code, record.name];
-  font(context, 13);
-  const cells = values.map((value, index) => lines(context, value, columns[index][1] - 20));
-  return { cells, rowHeight: Math.max(35, ...cells.map(cell => cell.length * 17 + 14)) };
-}
-
-function drawRow(context, row, y, striped) {
-  context.fillStyle = striped ? '#f3f7f5' : '#fff';
-  context.fillRect(margin, y, width - margin * 2, row.rowHeight);
-  font(context, 13);
-  let x = margin;
-  row.cells.forEach((cell, index) => {
-    context.strokeStyle = colors.rule;
-    context.strokeRect(x, y, columns[index][1], row.rowHeight);
-    context.fillStyle = colors.text;
-    cell.forEach((part, line) => context.fillText(part, x + 10, y + 9 + line * 17));
-    x += columns[index][1];
+function prepareRow(context, record, hint, previousDate, ambiguousCodes) {
+  const until = record?.endTime && record.endDate !== record.date
+    ? record.endTime + ' ' + shortDate(record.endDate) : record?.endTime;
+  const code = record?.code && ambiguousCodes.has(record.code) ? record.code + ' · ' + record.name : record?.code;
+  const values = [
+    record && record.date !== previousDate ? shortDate(record.date) : '',
+    record?.time, until, record?.holds.join(', '), code, hint?.number, hint?.name.toUpperCase(),
+  ];
+  const cells = values.map((value, index) => {
+    font(context, index >= 5 ? 10 : 12, index >= 5 ? 700 : 500);
+    return lines(context, value || '', columns[index][1] - 9);
   });
+  return { cells, rowHeight: Math.max(24, ...cells.map(cell => cell.length * 13 + 7)) };
 }
 
-export function reportPages(turn) {
+function drawRow(context, { cells, rowHeight }, y) {
+  let x = margin;
+  cells.forEach((cell, index) => {
+    const columnWidth = columns[index][1];
+    context.strokeStyle = '#161616';
+    context.strokeRect(x, y, columnWidth, rowHeight);
+    context.fillStyle = '#161616';
+    font(context, index >= 5 ? 10 : 12, index >= 5 ? 700 : 500);
+    context.textAlign = index === 6 ? 'left' : 'center';
+    const textX = index === 6 ? x + 5 : x + columnWidth / 2;
+    cell.forEach((part, line) => context.fillText(part, textX, y + 5 + line * 13));
+    x += columnWidth;
+  });
+  context.textAlign = 'left';
+}
+
+export function reportPages(turn, catalog, logo) {
   const pages = [];
-  let page = createPage();
-  let y = pageHeading(page.context, turn);
-  const records = sortedRecords(turn.records);
-  for (const [index, record] of records.entries()) {
-    const row = prepareRow(page.context, record);
-    if (y + row.rowHeight > endOfTable) {
-      pages.push(page);
-      page = createPage();
-      y = pageHeading(page.context, turn);
+  const records = sheetRecords(turn.records);
+  const legend = delayLegend(catalog, records.values());
+  const ambiguousCodes = new Set(legend.filter((entry, index) => legend[index - 1]?.number === entry.number).map(entry => entry.number));
+  const slots = Math.max(rowsPerSheet, legend.length, ...[...records.keys()].map(slot => slot + 1));
+  let slot = 0;
+  while (slot < slots) {
+    const page = createPage();
+    const { context } = page;
+    let y = pageHeading(context, turn, logo);
+    let previousDate = '';
+    for (let line = 0; line < rowsPerSheet; line++) {
+      const record = records.get(slot);
+      const hint = legend[legend.length > rowsPerSheet ? slot : line];
+      const row = prepareRow(context, record, hint, previousDate, ambiguousCodes);
+      if (y + row.rowHeight > endOfTable && line > 0) break;
+      drawRow(context, row, y);
+      y += row.rowHeight;
+      if (record) previousDate = record.date;
+      slot++;
     }
-    drawRow(page.context, row, y, index % 2 === 1);
-    y += row.rowHeight;
+    pages.push(page);
   }
-  if (!records.length) {
-    font(page.context, 14);
-    page.context.fillStyle = colors.muted;
-    page.context.fillText('Este turno aún no tiene movimientos registrados.', margin + 10, y + 14);
-  }
-  pages.push(page);
   return pages.map(({ canvas, context }, index) => {
-    font(context, 13, 500);
-    context.fillStyle = colors.muted;
-    context.fillText(records.length + (records.length === 1 ? ' movimiento' : ' movimientos'), margin, 1073);
+    font(context, 11, 500);
+    context.fillStyle = '#171717';
     context.textAlign = 'right';
     context.fillText('Hoja ' + (index + 1) + ' de ' + pages.length, width - margin, 1073);
     canvas.setAttribute('role', 'img');
@@ -145,6 +179,7 @@ export function reportPages(turn) {
     return canvas;
   });
 }
+
 
 function imageBytes(canvas, type) {
   const base64 = canvas.toDataURL(type, 0.95).split(',')[1];
