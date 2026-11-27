@@ -197,11 +197,14 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
 .cell-form .actions { justify-content: end; }
 .clock-entry { position: relative; }
 .clock-entry input[data-sheet-time] { padding-right: 46px; font-variant-numeric: tabular-nums; }
-.clock-entry .clock-toggle { position: absolute; top: 1px; right: 1px; width: 41px; height: calc(100% - 2px); }
-.clock-toggle[aria-expanded="true"] { background: #eaf3ec; }
-.clock-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #f4f7f4; }
-.clock-picker label { display: grid; gap: 4px; font-size: .85rem; }
-.clock-picker select { appearance: auto; background-image: none; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+.clock-entry .clock-toggle { position: absolute; top: 1px; right: 1px; width: 41px; height: calc(100% - 2px); color: #171717; }
+.clock-toggle[aria-expanded="true"] { background: #f4f4f4; }
+.clock-picker { position: fixed; z-index: 1; display: flex; align-items: stretch; gap: 2px; width: 146px; height: 312px; padding: 4px; border: 1px solid #b7b7b7; background: #fff; }
+.clock-column { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.clock-option { display: block; width: 100%; height: 43px; padding: 0; border: 0; border-radius: 2px; background: #fff; color: #111; text-align: center; font-size: 1rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.clock-option:hover { background: #efefef; }
+.clock-option[aria-selected="true"] { background: #d2d2d2; }
+.clock-option:focus-visible { outline-offset: -3px; }
 .cell-editor-footer { display: flex; justify-content: start; margin-top: 7px; border-top: 1px solid var(--line); padding-top: 3px; }
 .cell-editor-footer .btn { min-height: 38px; color: #883030; }
 .cell-error:not(:empty) { margin-top: 6px; }

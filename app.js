@@ -393,6 +393,7 @@ function positionCellEditor() {
   const left = Math.max(8, Math.min(bounds.left, document.documentElement.clientWidth - cellEditor.offsetWidth - 8));
   cellEditor.style.top = top + 'px';
   cellEditor.style.left = left + 'px';
+  positionClockPicker(topBound, screenBottom);
 }
 
 function openCell(turn, slot, key) {
@@ -477,10 +478,15 @@ function cellEditorFields(turn, row, key) {
 }
 
 function renderClockField(label, value) {
-  const options = count => Array.from({ length: count }, (_, index) => {
-    const value = String(index).padStart(2, '0');
-    return `<option value="${value}">${value}</option>`;
-  }).join('');
+  function column(name, part, count) {
+    const options = Array.from({ length: count }, (_, index) => {
+      const number = String(index).padStart(2, '0');
+      return `<button type="button" class="clock-option" role="option" aria-selected="false"
+        tabindex="-1" data-clock-value="${number}">${number}</button>`;
+    }).join('');
+    return `<div class="clock-column" role="listbox" aria-label="${name}" data-clock-part="${part}">${options}</div>`;
+  }
+
   return `<div class="field">
     <label for="sheet-time-value">${label}</label>
     <div class="clock-entry">
@@ -488,27 +494,65 @@ function renderClockField(label, value) {
         aria-describedby="sheet-time-format" data-sheet-time name="value" value="${value}" required>
       <button type="button" class="icon-button clock-toggle" data-cell-command="clock"
         aria-label="Seleccionar hora" aria-controls="sheet-clock-picker" aria-expanded="false">${icon('clock', 22)}</button>
+      <div class="clock-picker" id="sheet-clock-picker" role="group" aria-label="Selector de 24 horas" hidden>
+        ${column('Horas', 0, 24)}${column('Minutos', 1, 60)}
+      </div>
     </div>
     <p id="sheet-time-format" class="field-note">24 horas · Ej. 18:05</p>
-    <div class="clock-picker" id="sheet-clock-picker" role="group" aria-label="Selector de 24 horas" hidden>
-      <label>Horas<select data-clock-part="hours" size="5">${options(24)}</select></label>
-      <label>Minutos<select data-clock-part="minutes" size="5">${options(60)}</select></label>
-    </div>
   </div>`;
 }
 
-function syncClockPicker(input) {
-  const [hours, minutes] = (parseSheetTime(input.value) ?? ':').split(':');
-  input.form.querySelector('[data-clock-part="hours"]').value = hours;
-  input.form.querySelector('[data-clock-part="minutes"]').value = minutes;
+function positionClockPicker(viewportTop, viewportBottom) {
+  const picker = cellEditor.querySelector('.clock-picker:not([hidden])');
+  if (!picker) return;
+  const field = picker.closest('.clock-entry').getBoundingClientRect();
+  const below = viewportBottom - field.bottom - 10;
+  const above = field.top - viewportTop - 10;
+  const opensAbove = below < 312 && above > below;
+  picker.style.maxHeight = Math.max(0, opensAbove ? above : below) + 'px';
+  picker.style.top = (opensAbove ? field.top - picker.offsetHeight - 4 : field.bottom + 4) + 'px';
+  picker.style.left = Math.max(8, Math.min(field.left, document.documentElement.clientWidth - picker.offsetWidth - 8)) + 'px';
+}
+
+function syncClockPicker(picker, time, center = false) {
+  const parts = time.split(':');
+  for (const column of picker.querySelectorAll('.clock-column')) {
+    const selected = column.querySelector('[data-clock-value="' + parts[column.dataset.clockPart] + '"]');
+    const previous = column.querySelector('[aria-selected="true"]');
+    if (previous && previous !== selected) {
+      previous.setAttribute('aria-selected', 'false');
+      previous.tabIndex = -1;
+    }
+    selected.setAttribute('aria-selected', 'true');
+    selected.tabIndex = 0;
+    if (center) {
+      column.scrollTop += selected.getBoundingClientRect().top - column.getBoundingClientRect().top
+        - (column.clientHeight - selected.offsetHeight) / 2;
+    }
+  }
 }
 
 function showClockPicker(open) {
   const toggle = cellEditor.querySelector('[data-cell-command="clock"]');
-  cellEditor.querySelector('#sheet-clock-picker').hidden = !open;
+  const picker = cellEditor.querySelector('#sheet-clock-picker');
+  picker.hidden = !open;
   toggle.setAttribute('aria-expanded', String(open));
-  if (open) syncClockPicker(cellEditor.querySelector('[data-sheet-time]'));
   positionCellEditor();
+  if (open) {
+    const input = cellEditor.querySelector('[data-sheet-time]');
+    syncClockPicker(picker, parseSheetTime(input.value) ?? nowLocal().time, true);
+  }
+}
+
+function selectClockOption(option) {
+  const picker = option.closest('.clock-picker');
+  const time = [...picker.querySelectorAll('.clock-column')].map(column => {
+    const selected = column.contains(option) ? option : column.querySelector('[aria-selected="true"]');
+    return selected.dataset.clockValue;
+  }).join(':');
+  const input = picker.closest('form').querySelector('[data-sheet-time]');
+  input.value = time;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function saveCell(update, keepOpen = false) {
@@ -537,8 +581,10 @@ cellEditor.addEventListener('click', event => {
   const control = event.target.closest('button');
   if (!control || !editingCell) return;
   const { key } = editingCell;
-  const { cellValue, cellCommand } = control.dataset;
-  if (cellCommand === 'close') {
+  const { cellValue, cellCommand, clockValue } = control.dataset;
+  if (clockValue !== undefined) {
+    selectClockOption(control);
+  } else if (cellCommand === 'close') {
     closeCell(true);
   } else if (cellCommand === 'clock') {
     showClockPicker(control.getAttribute('aria-expanded') === 'false');
@@ -566,7 +612,11 @@ cellEditor.addEventListener('click', event => {
 
 cellEditor.addEventListener('input', event => {
   const input = event.target;
-  if (input.matches('[data-sheet-time]')) syncClockPicker(input);
+  if (input.matches('[data-sheet-time]')) {
+    const picker = cellEditor.querySelector('.clock-picker:not([hidden])');
+    const time = parseSheetTime(input.value);
+    if (picker && time) syncClockPicker(picker, time);
+  }
   if (input.id === 'cell-code-search') {
     const query = input.value.trim().toLowerCase();
     const options = [...cellEditor.querySelectorAll('[data-search-code]')];
@@ -587,15 +637,21 @@ cellEditor.addEventListener('input', event => {
   positionCellEditor();
 });
 
-cellEditor.addEventListener('change', event => {
-  if (!event.target.matches('[data-clock-part]')) return;
-  const picker = event.target.closest('.clock-picker');
-  const [currentHours, currentMinutes] = nowLocal().time.split(':');
-  const hours = picker.querySelector('[data-clock-part="hours"]').value || currentHours;
-  const minutes = picker.querySelector('[data-clock-part="minutes"]').value || currentMinutes;
-  const input = event.target.form.querySelector('[data-sheet-time]');
-  input.value = hours + ':' + minutes;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+cellEditor.addEventListener('keydown', event => {
+  if (!event.target.matches('.clock-option')) return;
+  const options = [...event.target.parentElement.children];
+  const index = options.indexOf(event.target);
+  const nextIndex = {
+    ArrowUp: Math.max(0, index - 1),
+    ArrowDown: Math.min(options.length - 1, index + 1),
+    Home: 0,
+    End: options.length - 1,
+  }[event.key];
+  if (nextIndex === undefined) return;
+  event.preventDefault();
+  const option = options[nextIndex];
+  selectClockOption(option);
+  option.focus();
 });
 
 cellEditor.addEventListener('focusout', event => {
@@ -956,7 +1012,12 @@ window.addEventListener('storage', event => {
 });
 
 document.addEventListener('pointerdown', event => {
-  if (editingCell && !cellEditor.contains(event.target) && !event.target.closest('.sheet-cell')) closeCell();
+  if (!editingCell) return;
+  if (!cellEditor.contains(event.target)) {
+    if (!event.target.closest('.sheet-cell')) closeCell();
+  } else if (!event.target.closest('.clock-entry') && cellEditor.querySelector('.clock-picker:not([hidden])')) {
+    showClockPicker(false);
+  }
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || !editingCell) return;
