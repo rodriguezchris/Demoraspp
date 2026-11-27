@@ -320,9 +320,11 @@ function renderCounts(sheet) {
   const metadata = countFields(sheet).map(([label, value]) =>
     `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('');
   const rows = sheet.rows.map((row, index) => {
+    const copyButton = `<button type="button" class="count-copy" data-action="copy-count-row" data-id="${esc(row.id)}"
+      aria-label="Copiar fila ${index + 1} para WhatsApp">Copiar</button>`;
     const cells = countValues(row, index, sheet.rows[index - 1]?.date).map((value, column) =>
       `<td>${column === 3 ? `<button type="button" class="sheet-cell" aria-label="Editar fila ${index + 1}, ${row.quantity} almejazos"
-        data-action="edit-count-row" data-id="${esc(row.id)}">${value}</button>` : esc(value)}</td>`).join('');
+        data-action="edit-count-row" data-id="${esc(row.id)}">${value}</button>` : esc(value)}${column === 6 ? copyButton : ''}</td>`).join('');
     return `<tr data-count-row>${cells}</tr>`;
   }).join('');
   return `<div class="sheet-workspace">
@@ -356,6 +358,29 @@ function renderCounts(sheet) {
       ${button('Transferir registro', 'transfer-count-sheet', 'secondary', 'transfer')}
     </div>
   </div>`;
+}
+
+async function copyCountRow(sheet, row) {
+  const hold = sheet.hold.trim().replace(/^(?:bodega|b)\s*#?\s*(?=\d)/i, '').replace(/^#\s*/, '');
+  const equipment = row.equipment.trim().replace(/^(?:almeja\s*)?#\s*/i, '');
+  const message = [
+    `Bodega: *#${hold}*`,
+    `${row.start}-${row.end}`,
+    `Almeja: *#${equipment}* Capacidad *${countNumber(row.capacity)}mt*`,
+    `Almejazos: *${row.quantity}*`,
+    `Total: *${countNumber(row.quantity * row.capacity)}mt*`,
+  ].join('\n');
+  try {
+    await navigator.clipboard.writeText(message);
+    notify('Fila copiada para WhatsApp.');
+  } catch {
+    openDialog('Copiar fila para WhatsApp', '<label class="field">Selecciona el mensaje y toca Copiar.'
+      + '<textarea id="count-message" rows="5" readonly></textarea></label>');
+    const field = dialog.querySelector('#count-message');
+    field.value = message;
+    field.focus();
+    field.select();
+  }
 }
 
 function renderCountReport(sheet) {
@@ -1174,6 +1199,11 @@ document.addEventListener('click', async event => {
       case 'new-count-row':
         showCountRowForm(sheet);
         break;
+      case 'copy-count-row': {
+        const row = sheet.rows.find(item => item.id === id);
+        if (row) await copyCountRow(sheet, row);
+        break;
+      }
       case 'edit-count-row': {
         const row = sheet.rows.find(item => item.id === id);
         if (row) showCountRowForm(sheet, row);
