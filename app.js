@@ -498,7 +498,7 @@ function renderClockField(label, value) {
         ${column('Horas', 0, 24)}${column('Minutos', 1, 60)}
       </div>
     </div>
-    <p id="sheet-time-format" class="field-note">24 horas · Ej. 18:05</p>
+    <span id="sheet-time-format" hidden>Formato de 24 horas. Por ejemplo, 18:05.</span>
   </div>`;
 }
 
@@ -506,15 +506,18 @@ function positionClockPicker(viewportTop, viewportBottom) {
   const picker = cellEditor.querySelector('.clock-picker:not([hidden])');
   if (!picker) return;
   const field = picker.closest('.clock-entry').getBoundingClientRect();
-  const below = viewportBottom - field.bottom - 10;
-  const above = field.top - viewportTop - 10;
-  const opensAbove = below < 312 && above > below;
+  const gap = 3;
+  const viewportPadding = 8;
+  const below = viewportBottom - field.bottom - gap - viewportPadding;
+  const above = field.top - viewportTop - gap - viewportPadding;
+  const fullHeight = parseFloat(getComputedStyle(picker).getPropertyValue('--clock-menu-height'));
+  const opensAbove = below < fullHeight && above > below;
   picker.style.maxHeight = Math.max(0, opensAbove ? above : below) + 'px';
-  picker.style.top = (opensAbove ? field.top - picker.offsetHeight - 4 : field.bottom + 4) + 'px';
+  picker.style.top = (opensAbove ? field.top - picker.offsetHeight - gap : field.bottom + gap) + 'px';
   picker.style.left = Math.max(8, Math.min(field.left, document.documentElement.clientWidth - picker.offsetWidth - 8)) + 'px';
 }
 
-function syncClockPicker(picker, time, center = false) {
+function syncClockPicker(picker, time, alignToTop = false) {
   const parts = time.split(':');
   for (const column of picker.querySelectorAll('.clock-column')) {
     const selected = column.querySelector('[data-clock-value="' + parts[column.dataset.clockPart] + '"]');
@@ -525,9 +528,12 @@ function syncClockPicker(picker, time, center = false) {
     }
     selected.setAttribute('aria-selected', 'true');
     selected.tabIndex = 0;
-    if (center) {
-      column.scrollTop += selected.getBoundingClientRect().top - column.getBoundingClientRect().top
-        - (column.clientHeight - selected.offsetHeight) / 2;
+    if (alignToTop) {
+      const options = [...column.children];
+      const visibleRows = Math.floor(column.clientHeight / selected.offsetHeight);
+      const first = (options.indexOf(selected) - visibleRows + options.length) % options.length;
+      column.append(...options.slice(first), ...options.slice(0, first));
+      column.scrollTop += selected.getBoundingClientRect().top - column.getBoundingClientRect().top;
     }
   }
 }
