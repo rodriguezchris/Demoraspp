@@ -463,17 +463,52 @@ function cellEditorFields(turn, row, key) {
     </div>`;
   }
   const label = cellFields.find(([name]) => name === key)[1];
-  const inputAttributes = key === 'date' ? 'type="date"'
-    : 'type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" aria-describedby="sheet-time-format" data-sheet-time';
+  const input = key === 'date'
+    ? `<label class="field">${label}<input type="date" name="value" value="${row.date}" required></label>`
+    : renderClockField(label, row[key]);
   const finishDate = key === 'endTime'
     ? `<label class="field">Fecha de fin<input type="date" name="endDate" value="${row.endDate || row.date}"></label>` : '';
   const clear = key === 'date' ? '' : '<button type="button" class="btn plain" data-cell-command="clear">Borrar</button>';
   return `<form class="cell-form">
-    <label class="field">${label}<input ${inputAttributes} name="value" value="${row[key]}" required></label>
-    ${key === 'date' ? '' : '<p id="sheet-time-format" class="field-note">24 horas · Ej. 18:05</p>'}
+    ${input}
     ${finishDate}
     <div class="actions">${clear}<button type="submit" class="btn primary">Guardar</button></div>
   </form>`;
+}
+
+function renderClockField(label, value) {
+  const options = count => Array.from({ length: count }, (_, index) => {
+    const value = String(index).padStart(2, '0');
+    return `<option value="${value}">${value}</option>`;
+  }).join('');
+  return `<div class="field">
+    <label for="sheet-time-value">${label}</label>
+    <div class="clock-entry">
+      <input type="text" id="sheet-time-value" inputmode="numeric" autocomplete="off" placeholder="HH:MM"
+        aria-describedby="sheet-time-format" data-sheet-time name="value" value="${value}" required>
+      <button type="button" class="icon-button clock-toggle" data-cell-command="clock"
+        aria-label="Seleccionar hora" aria-controls="sheet-clock-picker" aria-expanded="false">${icon('clock', 22)}</button>
+    </div>
+    <p id="sheet-time-format" class="field-note">24 horas · Ej. 18:05</p>
+    <div class="clock-picker" id="sheet-clock-picker" role="group" aria-label="Selector de 24 horas" hidden>
+      <label>Horas<select data-clock-part="hours" size="5">${options(24)}</select></label>
+      <label>Minutos<select data-clock-part="minutes" size="5">${options(60)}</select></label>
+    </div>
+  </div>`;
+}
+
+function syncClockPicker(input) {
+  const [hours, minutes] = (parseSheetTime(input.value) ?? ':').split(':');
+  input.form.querySelector('[data-clock-part="hours"]').value = hours;
+  input.form.querySelector('[data-clock-part="minutes"]').value = minutes;
+}
+
+function showClockPicker(open) {
+  const toggle = cellEditor.querySelector('[data-cell-command="clock"]');
+  cellEditor.querySelector('#sheet-clock-picker').hidden = !open;
+  toggle.setAttribute('aria-expanded', String(open));
+  if (open) syncClockPicker(cellEditor.querySelector('[data-sheet-time]'));
+  positionCellEditor();
 }
 
 function saveCell(update, keepOpen = false) {
@@ -505,6 +540,8 @@ cellEditor.addEventListener('click', event => {
   const { cellValue, cellCommand } = control.dataset;
   if (cellCommand === 'close') {
     closeCell(true);
+  } else if (cellCommand === 'clock') {
+    showClockPicker(control.getAttribute('aria-expanded') === 'false');
   } else if (cellCommand === 'clear') {
     saveCell(row => {
       if (key === 'code') Object.assign(row, { codeId: '', code: '', name: '' });
@@ -529,6 +566,7 @@ cellEditor.addEventListener('click', event => {
 
 cellEditor.addEventListener('input', event => {
   const input = event.target;
+  if (input.matches('[data-sheet-time]')) syncClockPicker(input);
   if (input.id === 'cell-code-search') {
     const query = input.value.trim().toLowerCase();
     const options = [...cellEditor.querySelectorAll('[data-search-code]')];
@@ -547,6 +585,17 @@ cellEditor.addEventListener('input', event => {
     }
   }
   positionCellEditor();
+});
+
+cellEditor.addEventListener('change', event => {
+  if (!event.target.matches('[data-clock-part]')) return;
+  const picker = event.target.closest('.clock-picker');
+  const [currentHours, currentMinutes] = nowLocal().time.split(':');
+  const hours = picker.querySelector('[data-clock-part="hours"]').value || currentHours;
+  const minutes = picker.querySelector('[data-clock-part="minutes"]').value || currentMinutes;
+  const input = event.target.form.querySelector('[data-sheet-time]');
+  input.value = hours + ':' + minutes;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
 cellEditor.addEventListener('focusout', event => {
@@ -910,7 +959,15 @@ document.addEventListener('pointerdown', event => {
   if (editingCell && !cellEditor.contains(event.target) && !event.target.closest('.sheet-cell')) closeCell();
 });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && editingCell) closeCell(true);
+  if (event.key !== 'Escape' || !editingCell) return;
+  const toggle = cellEditor.querySelector('[data-cell-command="clock"][aria-expanded="true"]');
+  if (toggle) {
+    showClockPicker(false);
+    toggle.focus({ preventScroll: true });
+    event.preventDefault();
+  } else {
+    closeCell(true);
+  }
 });
 window.addEventListener('resize', positionCellEditor);
 window.visualViewport?.addEventListener('resize', positionCellEditor);

@@ -195,6 +195,13 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
 .cell-editor-head .icon-button { width: 36px; height: 36px; }
 .cell-form { display: grid; gap: 10px; }
 .cell-form .actions { justify-content: end; }
+.clock-entry { position: relative; }
+.clock-entry input[data-sheet-time] { padding-right: 46px; font-variant-numeric: tabular-nums; }
+.clock-entry .clock-toggle { position: absolute; top: 1px; right: 1px; width: 41px; height: calc(100% - 2px); }
+.clock-toggle[aria-expanded="true"] { background: #eaf3ec; }
+.clock-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #f4f7f4; }
+.clock-picker label { display: grid; gap: 4px; font-size: .85rem; }
+.clock-picker select { appearance: auto; background-image: none; padding: 3px 6px; font-variant-numeric: tabular-nums; }
 .cell-editor-footer { display: flex; justify-content: start; margin-top: 7px; border-top: 1px solid var(--line); padding-top: 3px; }
 .cell-editor-footer .btn { min-height: 38px; color: #883030; }
 .cell-error:not(:empty) { margin-top: 6px; }
