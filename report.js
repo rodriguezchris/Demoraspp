@@ -1,10 +1,10 @@
 import { delayLegend, rowsPerSheet, sheetRecords, shortDate } from './model.js';
 import { countColumns, countFields, countNumber, countRowsPerPage, countValues, sheetTotal } from './almejazos.js';
 
-const width = 794;
-const height = 1123;
-const margin = 46;
-const endOfTable = 1044;
+const width = 816;
+const height = 1056;
+const margin = 57;
+const endOfTable = height - 60;
 const columns = [
   ['Fecha', 84], ['Desde', 80], ['Hasta', 80], ['Bodega', 83],
   ['Tipo de demora', 84], ['', 36], ['Descripción de la demora', 255],
@@ -49,33 +49,33 @@ function createPage() {
   return { canvas, context };
 }
 
-function paperHeading(context, fields, logo, { title = '', labelWidth = 84 } = {}) {
+function paperHeading(context, fields, logo, { title = '', labelWidth = 90 } = {}) {
   if (logo) {
     const scale = Math.min(179 / logo.naturalWidth, 68 / logo.naturalHeight);
-    context.drawImage(logo, margin, 59, logo.naturalWidth * scale, logo.naturalHeight * scale);
+    context.drawImage(logo, margin, 37, logo.naturalWidth * scale, logo.naturalHeight * scale);
   } else {
     font(context, 33, 700);
     context.fillStyle = '#171717';
-    context.fillText('intertek', margin, 59);
+    context.fillText('intertek', margin, 37);
     font(context, 12, 700);
-    context.fillText('Total Quality. Assured.', margin, 99);
+    context.fillText('Total Quality. Assured.', margin, 77);
   }
 
   if (title) {
     context.textAlign = 'center';
     context.fillStyle = '#171717';
     font(context, 22, 700);
-    context.fillText(title, width / 2, 82);
+    context.fillText(title, width / 2, 60);
     context.textAlign = 'left';
   }
 
   const columnGap = 30;
   const columnWidth = (width - 2 * margin - columnGap) / 2;
   const valueWidth = columnWidth - labelWidth;
-  const lineHeight = 17;
-  let y = 141;
+  const lineHeight = 18;
+  let y = 118;
   for (let index = 0; index < fields.length; index += 2) {
-    font(context, 13, 600);
+    font(context, 14, 600);
     const pair = fields.slice(index, index + 2).map(([label, value]) => ({
       label, parts: lines(context, value, valueWidth - 4),
     }));
@@ -84,9 +84,9 @@ function paperHeading(context, fields, logo, { title = '', labelWidth = 84 } = {
       const x = margin + column * (columnWidth + columnGap);
       const valueX = x + labelWidth;
       context.fillStyle = '#171717';
-      font(context, 13, 700);
+      font(context, 14, 700);
       context.fillText(label + ':', x, y);
-      font(context, 13, 600);
+      font(context, 14, 600);
       parts.forEach((part, line) => context.fillText(part, valueX + 2, y + line * lineHeight));
       context.fillRect(valueX, y + rowHeight, valueWidth, 1);
     });
@@ -104,7 +104,7 @@ function pageHeading(context, turn, logo) {
   context.fillStyle = '#161616';
   context.lineWidth = 1.1;
   context.textAlign = 'center';
-  font(context, 12, 700);
+  font(context, 13, 700);
   let x = margin;
   const headers = [
     ...columns.slice(0, 5),
@@ -133,10 +133,10 @@ function prepareRow(context, record, hint, previousDate, ambiguousCodes) {
     record?.time, until, record?.holds.join(', '), code, hint?.number, hint?.name.toUpperCase(),
   ];
   const cells = values.map((value, index) => {
-    font(context, index >= 5 ? 10 : 12, index >= 5 ? 700 : 500);
+    font(context, index >= 5 ? 11 : 13.5, index >= 5 ? 700 : 500);
     return lines(context, value || '', columns[index][1] - 9);
   });
-  return { cells, rowHeight: Math.max(24, ...cells.map(cell => cell.length * 13 + 7)) };
+  return { cells, rowHeight: Math.max(24, ...cells.map(cell => cell.length * 15 + 7)) };
 }
 
 function drawRow(context, { cells, rowHeight }, y) {
@@ -146,10 +146,10 @@ function drawRow(context, { cells, rowHeight }, y) {
     context.strokeStyle = '#161616';
     context.strokeRect(x, y, columnWidth, rowHeight);
     context.fillStyle = '#161616';
-    font(context, index >= 5 ? 10 : 12, index >= 5 ? 700 : 500);
+    font(context, index >= 5 ? 11 : 13.5, index >= 5 ? 700 : 500);
     context.textAlign = index === 6 ? 'left' : 'center';
     const textX = index === 6 ? x + 5 : x + columnWidth / 2;
-    cell.forEach((part, line) => context.fillText(part, textX, y + 5 + line * 13));
+    cell.forEach((part, line) => context.fillText(part, textX, y + 5 + line * 15));
     x += columnWidth;
   });
   context.textAlign = 'left';
@@ -188,12 +188,12 @@ function finishPages(pages, { showPageNumber = true, imageTimestamp = '' } = {})
       font(context, 26);
       context.fillStyle = '#171717';
       context.textAlign = 'right';
-      context.fillText(imageTimestamp, width - margin, 1073);
+      context.fillText(imageTimestamp, width - margin, height - 42);
     } else if (showPageNumber) {
-      font(context, 11, 500);
+      font(context, 12, 500);
       context.fillStyle = '#171717';
       context.textAlign = 'right';
-      context.fillText('Hoja ' + (index + 1) + ' de ' + pages.length, width - margin, 1073);
+      context.fillText('Hoja ' + (index + 1) + ' de ' + pages.length, width - margin, height - 42);
     }
     canvas.setAttribute('role', 'img');
     canvas.setAttribute('aria-label', 'Vista previa de la hoja ' + (index + 1) + ' de ' + pages.length);
@@ -206,9 +206,9 @@ function drawCountCells(context, values, y, { bold = false, total = false, minim
   const widths = total
     ? [countColumns.slice(0, -1).reduce((sum, [, size]) => sum + size, 0), countColumns.at(-1)[1]]
     : countColumns.map(([, size]) => size);
-  font(context, 12, bold ? 700 : 500);
+  font(context, 13.5, bold ? 700 : 500);
   const cells = values.map((value, index) => lines(context, value, widths[index] - 9));
-  const rowHeight = Math.max(minimumHeight, ...cells.map(cell => cell.length * 13 + 7));
+  const rowHeight = Math.max(minimumHeight, ...cells.map(cell => cell.length * 15 + 7));
   if (y + rowHeight > endOfTable) return null;
 
   context.textAlign = 'center';
@@ -219,7 +219,7 @@ function drawCountCells(context, values, y, { bold = false, total = false, minim
     const cellWidth = widths[index];
     context.strokeRect(x, y, cellWidth, rowHeight);
     cell.forEach((part, line) => context.fillText(part, x + cellWidth / 2,
-      y + (rowHeight - cell.length * 13) / 2 + line * 13));
+      y + (rowHeight - cell.length * 15) / 2 + line * 15));
     x += cellWidth;
   }
   context.textAlign = 'left';
@@ -235,7 +235,7 @@ export function countReportPages(sheet, logo, options = {}) {
   while (slot <= sheet.rows.length) {
     const page = createPage();
     const { context } = page;
-    let y = paperHeading(context, fields, logo, { title: 'CONTROL RECORD', labelWidth: 147 });
+    let y = paperHeading(context, fields, logo, { title: 'CONTROL RECORD', labelWidth: 155 });
     y = drawCountCells(context, headers, y, { bold: true, minimumHeight: 33 });
     let previousDate = '';
     let linesDrawn = 0;
@@ -282,7 +282,7 @@ export function pngFiles(pages, filename) {
   ));
 }
 
-// Each report canvas becomes a full A4 PDF page. Both formats share the same layout.
+// Each report canvas becomes a full US Letter PDF page. Both formats share the same layout.
 export function pdfFile(pages, filename) {
   const encoder = new TextEncoder();
   const chunks = [];
@@ -308,13 +308,13 @@ export function pdfFile(pages, filename) {
     const page = 3 + index * 3;
     const image = page + 1;
     const drawing = page + 2;
-    object(page, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 '
+    object(page, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 '
       + image + ' 0 R >> >> /Contents ' + drawing + ' 0 R >>');
     const jpeg = imageBytes(canvas, 'image/jpeg');
     object(image, '<< /Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + canvas.height
       + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpeg.byteLength
       + ' >>\nstream\n', jpeg, '\nendstream');
-    const command = 'q\n595.28 0 0 841.89 0 0 cm\n/Im0 Do\nQ\n';
+    const command = 'q\n612 0 0 792 0 0 cm\n/Im0 Do\nQ\n';
     object(drawing, '<< /Length ' + command.length + ' >>\nstream\n' + command + 'endstream');
   });
   const xref = length;
