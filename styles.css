@@ -181,9 +181,9 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
 .sheet-grid th, .sheet-grid td { padding: 0; border: 1px solid #171717; white-space: normal; }
 .sheet-grid th { height: 44px; padding: 4px; font-size: .78rem; line-height: 1.15; }
 .sheet-grid td { height: 33px; }
-.sheet-grid td.legend-name, .sheet-grid td.legend-number { padding: 3px 5px; text-transform: uppercase; font-size: .75rem; font-weight: 740; line-height: 1.2; overflow-wrap: anywhere; }
+.sheet-grid td.legend-name, .sheet-grid td.legend-number { padding: 3px 5px; text-transform: uppercase; font-size: .81rem; font-weight: 740; line-height: 1.2; overflow-wrap: anywhere; }
 .sheet-grid td.legend-name { text-align: left; }
-.sheet-cell { display: block; width: 100%; min-height: 32px; padding: 4px 3px; border: 0; border-radius: 0; background: #fff; color: #141414; font-size: .92rem; font-weight: 620; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sheet-cell { display: block; width: 100%; min-height: 32px; padding: 4px 3px; border: 0; border-radius: 0; background: #fff; color: #141414; font-size: 1rem; font-weight: 620; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .sheet-cell:hover, .sheet-cell[aria-expanded="true"] { background: #eaf3ec; }
 .sheet-cell:focus-visible { position: relative; outline: 2px solid var(--green); outline-offset: -2px; }
 .sheet-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
@@ -263,7 +263,7 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   .sheet-grid col.column-code { width: 66px; }
   .sheet-grid col.column-legend-number { width: 36px; }
   .sheet-grid th { padding-inline: 3px; font-size: .7rem; }
-  .sheet-cell { min-height: 42px; padding: 3px 1px; font-size: .79rem; }
+  .sheet-cell { min-height: 42px; padding: 3px 1px; font-size: .86rem; }
 }
 
 .sheet-types {
@@ -308,8 +308,8 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   .sheet-type { flex: 1; }
   .count-paper .paper-fields > div { grid-template-columns: minmax(0, 1fr); }
   .count-sheet-select { flex-basis: 100%; max-width: 100%; }
-  .count-grid { min-width: 348px; font-size: .72rem; }
-  .count-grid th { font-size: .58rem; padding-inline: 2px; }
+  .count-grid { min-width: 384px; font-size: .79rem; }
+  .count-grid th { font-size: .65rem; padding-inline: 2px; }
   .count-grid col:nth-child(1) { width: 6%; }
   .count-grid col:nth-child(2) { width: 18%; }
   .count-grid col:nth-child(3) { width: 21%; }
