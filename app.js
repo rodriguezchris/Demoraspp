@@ -760,18 +760,68 @@ function openFiles(title, description, files) {
   });
 }
 
+function showPngExport(turn, logo) {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  const date = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join('-');
+  const time = pad(now.getHours()) + ':' + pad(now.getMinutes());
+
+  openDialog('Fecha y hora de la imagen', `<form>
+    <div class="form-grid">
+      ${field('Fecha', 'date', date, { type: 'date', attributes: 'required' })}
+      ${field('Hora (24 horas)', 'time', time, {
+        attributes: 'required inputmode="numeric" maxlength="5"',
+        note: 'Ej. 17:50 o 1750',
+      })}
+      <p class="error full" role="alert"></p>
+    </div>
+    <div class="modal-actions">
+      ${button('Cancelar', 'close-dialog', 'secondary')}
+      <button type="submit" class="btn primary">Generar imagen</button>
+    </div>
+  </form>`);
+
+  const form = dialog.querySelector('form');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const chosenDate = data.get('date');
+    const chosenTime = parseSheetTime(data.get('time'));
+
+    if (!validDate(chosenDate) || !chosenTime) {
+      form.querySelector('.error').textContent = 'Revisa la fecha y escribe una hora entre 00:00 y 23:59.';
+      return;
+    }
+
+    const [year, month, day] = chosenDate.split('-');
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const imageTimestamp = `${Number(day)} ${months[Number(month) - 1]} ${year}, ${chosenTime}`;
+
+    try {
+      const pages = reportPages(turn, catalogFor(turn), logo, { imageTimestamp });
+      const files = pngFiles(pages, filenameFor(turn));
+      const description = files.length === 1
+        ? 'Imagen lista para enviar por WhatsApp.'
+        : 'Se generó una imagen por hoja.';
+      openFiles('Imagen de la hoja', description, files);
+    } catch {
+      form.querySelector('.error').textContent = 'No se pudieron generar las imágenes. Inténtalo de nuevo.';
+    }
+  });
+}
+
 async function exportReport(turn, format) {
   const previewPages = currentPages;
   const logo = await loadPaperLogo(selectedPaperLogo());
-    const pages = format === 'png' || !previewPages.length
-    ? reportPages(turn, catalogFor(turn), logo, { showPageNumber: format !== 'png' })
-    : previewPages;
-  const filename = filenameFor(turn);
-  const files = format === 'png' ? pngFiles(pages, filename) : [pdfFile(pages, filename)];
-  const description = format === 'png'
-    ? (files.length === 1 ? 'Imagen lista para enviar por WhatsApp.' : 'Se generó una imagen numerada por hoja.')
-    : 'Todas las hojas del turno están en un solo PDF.';
-  openFiles(format === 'png' ? 'Imagen de la hoja' : 'PDF del turno', description, files);
+
+  if (format === 'png') {
+    showPngExport(turn, logo);
+    return;
+  }
+
+  const pages = previewPages.length ? previewPages : reportPages(turn, catalogFor(turn), logo);
+  const file = pdfFile(pages, filenameFor(turn));
+  openFiles('PDF del turno', 'Todas las hojas del turno están en un solo PDF.', [file]);
 }
 
 function exportTransfer(turn) {

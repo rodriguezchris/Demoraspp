@@ -145,7 +145,8 @@ function drawRow(context, { cells, rowHeight }, y) {
   context.textAlign = 'left';
 }
 
-export function reportPages(turn, catalog, logo, { showPageNumber = true } = {}) {  const pages = [];
+export function reportPages(turn, catalog, logo, { showPageNumber = true, imageTimestamp = '' } = {}) {
+  const pages = [];
   const records = sheetRecords(turn.records);
   const legend = delayLegend(catalog, records.values());
   const ambiguousCodes = new Set(legend.filter((entry, index) => legend[index - 1]?.number === entry.number).map(entry => entry.number));
@@ -169,7 +170,12 @@ export function reportPages(turn, catalog, logo, { showPageNumber = true } = {})
     pages.push(page);
   }
   return pages.map(({ canvas, context }, index) => {
-        if (showPageNumber) {
+           if (imageTimestamp) {
+      font(context, 26);
+      context.fillStyle = '#171717';
+      context.textAlign = 'right';
+      context.fillText(imageTimestamp, width - margin, 1073);
+    } else if (showPageNumber) {
       font(context, 11, 500);
       context.fillStyle = '#171717';
       context.textAlign = 'right';
