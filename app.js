@@ -440,6 +440,18 @@ function showCountRowForm(sheet, row = null) {
       }
     });
   }, remove);
+
+  const startInput = form.elements.namedItem('start');
+  const endInput = form.elements.namedItem('end');
+
+  startInput.addEventListener('change', () => {
+    const start = parseSheetTime(startInput.value);
+    if (!start) return;
+
+    const nextHour = (Number(start.slice(0, 2)) + 1) % 24;
+    endInput.value = String(nextHour).padStart(2, '0') + ':00';
+  });
+
   const equipmentInput = form.elements.namedItem('equipment');
   const capacityInput = form.elements.namedItem('capacity');
   let key = equipmentKey(equipmentInput.value);
