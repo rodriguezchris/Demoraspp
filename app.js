@@ -490,10 +490,10 @@ function renderClockField(label, value) {
   return `<div class="field">
     <label for="sheet-time-value">${label}</label>
     <div class="clock-entry">
-      <input type="text" id="sheet-time-value" inputmode="numeric" autocomplete="off" placeholder="HH:MM"
+      <input type="text" id="sheet-time-value" inputmode="numeric" autocomplete="off" placeholder="--:--"
         aria-describedby="sheet-time-format" data-sheet-time name="value" value="${value}" required>
       <button type="button" class="icon-button clock-toggle" data-cell-command="clock"
-        aria-label="Seleccionar hora" aria-controls="sheet-clock-picker" aria-expanded="false">${icon('clock', 22)}</button>
+        aria-label="Seleccionar hora" aria-controls="sheet-clock-picker" aria-expanded="false">${icon('clock', 24)}</button>
       <div class="clock-picker" id="sheet-clock-picker" role="group" aria-label="Selector de 24 horas" hidden>
         ${column('Horas', 0, 24)}${column('Minutos', 1, 60)}
       </div>

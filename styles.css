@@ -196,8 +196,8 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
 .cell-form { display: grid; gap: 10px; }
 .cell-form .actions { justify-content: end; }
 .clock-entry { position: relative; }
-.clock-entry input[data-sheet-time] { padding-right: 46px; font-variant-numeric: tabular-nums; }
-.clock-entry .clock-toggle { position: absolute; top: 1px; right: 1px; width: 41px; height: calc(100% - 2px); color: #171717; }
+.clock-entry input[data-sheet-time] { padding-right: 42px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.clock-entry .clock-toggle { position: absolute; top: 1px; right: 1px; width: 36px; height: calc(100% - 2px); color: #101010; background: transparent; }
 .clock-entry .clock-toggle:hover { background: transparent; }
 .clock-picker {
   --clock-menu-height: 260px;
@@ -205,7 +205,7 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   z-index: 1;
   display: flex;
   gap: 4px;
-  width: 116px;
+  width: 172px;
   height: var(--clock-menu-height);
   padding: 3px;
   border: 1px solid #bfbfbf;
@@ -228,7 +228,7 @@ legend { margin-bottom: 7px; font-size: .88rem; font-weight: 680; }
   border-radius: 2px;
   background: transparent;
   color: #101010;
-  font: 400 14px Arial, sans-serif;
+  font: 400 14px Arial, sans-serif; text-align: center;
   scroll-snap-align: start;
 }
 .clock-option:hover { background: #ededed; }
