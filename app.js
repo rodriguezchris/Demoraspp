@@ -433,8 +433,12 @@ function openCell(turn, slot, key) {
     ${cellEditorFields(turn, row, key)}
     <p class="error cell-error" role="alert"></p>
     <footer class="cell-editor-footer">${button('Limpiar fila', 'delete-record', 'plain', 'trash', row.id)}</footer>`;
-  cellEditor.hidden = false;
-  positionCellEditor();
+    cellEditor.hidden = false;
+  if (key === 'time' || key === 'endTime') {
+    showClockPicker(true);
+  } else {
+    positionCellEditor();
+  }
   const target = cellEditor.querySelector('input, button[data-cell-value]') ?? cellEditor.querySelector('button');
   if (matchMedia('(pointer: fine)').matches) {
     target.focus({ preventScroll: true });
@@ -759,7 +763,9 @@ function openFiles(title, description, files) {
 async function exportReport(turn, format) {
   const previewPages = currentPages;
   const logo = await loadPaperLogo(selectedPaperLogo());
-  const pages = previewPages.length ? previewPages : reportPages(turn, catalogFor(turn), logo);
+    const pages = format === 'png' || !previewPages.length
+    ? reportPages(turn, catalogFor(turn), logo, { showPageNumber: format !== 'png' })
+    : previewPages;
   const filename = filenameFor(turn);
   const files = format === 'png' ? pngFiles(pages, filename) : [pdfFile(pages, filename)];
   const description = format === 'png'
