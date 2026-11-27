@@ -532,13 +532,7 @@ function syncClockPicker(picker, time, alignToTop = false) {
     }
     selected.setAttribute('aria-selected', 'true');
     selected.tabIndex = 0;
-    if (alignToTop) {
-      const options = [...column.children];
-      const visibleRows = Math.floor(column.clientHeight / selected.offsetHeight);
-      const first = (options.indexOf(selected) - visibleRows + options.length) % options.length;
-      column.append(...options.slice(first), ...options.slice(0, first));
-      column.scrollTop += selected.getBoundingClientRect().top - column.getBoundingClientRect().top;
-    }
+       if (alignToTop) column.scrollTop = 0;
   }
 }
 
