@@ -1,5 +1,5 @@
-const cacheName = 'bitacora-muelle-11';
-const assetNames = ['./', './index.html', './styles.css', './app.js', './model.js', './report.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './intertek.png', './intertek-nuevo.webp'];
+const cacheName = 'bitacora-muelle-12';
+const assetNames = ['./', './index.html', './styles.css', './app.js', './model.js', './almejazos.js', './report.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './intertek.png', './intertek-nuevo.webp'];
 const urls = new Set(assetNames.map(path => new URL(path, self.registration.scope).href));
 
 self.addEventListener('install', event => {

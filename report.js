@@ -1,4 +1,5 @@
 import { delayLegend, rowsPerSheet, sheetRecords, shortDate } from './model.js';
+import { countColumns, countFields, countNumber, countRowsPerPage, countValues, sheetTotal } from './almejazos.js';
 
 const width = 794;
 const height = 1123;
@@ -48,7 +49,7 @@ function createPage() {
   return { canvas, context };
 }
 
-function pageHeading(context, turn, logo) {
+function paperHeading(context, fields, logo, { title = '', labelWidth = 84 } = {}) {
   if (logo) {
     const scale = Math.min(179 / logo.naturalWidth, 68 / logo.naturalHeight);
     context.drawImage(logo, margin, 59, logo.naturalWidth * scale, logo.naturalHeight * scale);
@@ -60,13 +61,16 @@ function pageHeading(context, turn, logo) {
     context.fillText('Total Quality. Assured.', margin, 99);
   }
 
-  const fields = [
-    ['BARCO', turn.ship], ['INSPECTOR', turn.inspector],
-    ['PRODUCTO', turn.product], ['CLIENTE', turn.client],
-  ];
+  if (title) {
+    context.textAlign = 'center';
+    context.fillStyle = '#171717';
+    font(context, 22, 700);
+    context.fillText(title, width / 2, 82);
+    context.textAlign = 'left';
+  }
+
   const columnGap = 30;
   const columnWidth = (width - 2 * margin - columnGap) / 2;
-  const labelWidth = 84;
   const valueWidth = columnWidth - labelWidth;
   const lineHeight = 17;
   let y = 141;
@@ -88,8 +92,14 @@ function pageHeading(context, turn, logo) {
     });
     y += rowHeight + 11;
   }
-  y += 11;
+  return y + 11;
+}
 
+function pageHeading(context, turn, logo) {
+  const y = paperHeading(context, [
+    ['BARCO', turn.ship], ['INSPECTOR', turn.inspector],
+    ['PRODUCTO', turn.product], ['CLIENTE', turn.client],
+  ], logo);
   context.strokeStyle = '#161616';
   context.fillStyle = '#161616';
   context.lineWidth = 1.1;
@@ -145,7 +155,7 @@ function drawRow(context, { cells, rowHeight }, y) {
   context.textAlign = 'left';
 }
 
-export function reportPages(turn, catalog, logo, { showPageNumber = true, imageTimestamp = '' } = {}) {
+export function reportPages(turn, catalog, logo, options = {}) {
   const pages = [];
   const records = sheetRecords(turn.records);
   const legend = delayLegend(catalog, records.values());
@@ -169,8 +179,12 @@ export function reportPages(turn, catalog, logo, { showPageNumber = true, imageT
     }
     pages.push(page);
   }
+  return finishPages(pages, options);
+}
+
+function finishPages(pages, { showPageNumber = true, imageTimestamp = '' } = {}) {
   return pages.map(({ canvas, context }, index) => {
-           if (imageTimestamp) {
+    if (imageTimestamp) {
       font(context, 26);
       context.fillStyle = '#171717';
       context.textAlign = 'right';
@@ -187,6 +201,70 @@ export function reportPages(turn, catalog, logo, { showPageNumber = true, imageT
   });
 }
 
+
+function drawCountCells(context, values, y, { bold = false, total = false, minimumHeight = 24 } = {}) {
+  const widths = total
+    ? [countColumns.slice(0, -1).reduce((sum, [, size]) => sum + size, 0), countColumns.at(-1)[1]]
+    : countColumns.map(([, size]) => size);
+  font(context, 12, bold ? 700 : 500);
+  const cells = values.map((value, index) => lines(context, value, widths[index] - 9));
+  const rowHeight = Math.max(minimumHeight, ...cells.map(cell => cell.length * 13 + 7));
+  if (y + rowHeight > endOfTable) return null;
+
+  context.textAlign = 'center';
+  context.strokeStyle = '#161616';
+  context.fillStyle = '#161616';
+  let x = margin;
+  for (const [index, cell] of cells.entries()) {
+    const cellWidth = widths[index];
+    context.strokeRect(x, y, cellWidth, rowHeight);
+    cell.forEach((part, line) => context.fillText(part, x + cellWidth / 2,
+      y + (rowHeight - cell.length * 13) / 2 + line * 13));
+    x += cellWidth;
+  }
+  context.textAlign = 'left';
+  return y + rowHeight;
+}
+
+export function countReportPages(sheet, logo, options = {}) {
+  const pages = [];
+  const fields = countFields(sheet).map(([label, value]) => [label.toUpperCase(), value]);
+  const headers = countColumns.map(([label]) => label.toUpperCase());
+  let slot = 0;
+
+  while (slot <= sheet.rows.length) {
+    const page = createPage();
+    const { context } = page;
+    let y = paperHeading(context, fields, logo, { title: 'CONTROL RECORD', labelWidth: 147 });
+    y = drawCountCells(context, headers, y, { bold: true, minimumHeight: 33 });
+    let previousDate = '';
+    let linesDrawn = 0;
+    while (linesDrawn < countRowsPerPage && slot < sheet.rows.length) {
+      const row = sheet.rows[slot];
+      const nextY = drawCountCells(context, countValues(row, slot, previousDate), y);
+      if (nextY === null) break;
+      y = nextY;
+      previousDate = row.date;
+      slot++;
+      linesDrawn++;
+    }
+    if (slot === sheet.rows.length) {
+      const totalY = drawCountCells(context, ['TOTAL TURNO', countNumber(sheetTotal(sheet))], y, { bold: true, total: true });
+      if (totalY !== null) {
+        y = totalY;
+        slot++;
+        let blankIndex = sheet.rows.length;
+        for (; linesDrawn < countRowsPerPage; linesDrawn++) {
+          const nextY = drawCountCells(context, countValues(null, blankIndex++, ''), y);
+          if (nextY === null) break;
+          y = nextY;
+        }
+      }
+    }
+    pages.push(page);
+  }
+  return finishPages(pages, options);
+}
 
 function imageBytes(canvas, type) {
   const base64 = canvas.toDataURL(type, 0.95).split(',')[1];
